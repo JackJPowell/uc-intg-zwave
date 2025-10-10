@@ -1,16 +1,9 @@
-[![Discord](https://badgen.net/discord/onli### Prerequisites
-
-- A running [Z-Wave JS Server](https://github.com/zwave-js/zwave-js-server) instance
-- Your Z-Wave JS Server WebSocket URL (e.g., `ws://192.168.1.100:3000`)
-
-### Unfolded Circle Remote
-
-1. **Download** the latest `.tar.gz` release from the [Releases](https://github.com/JackJPowell/uc-intg-zwave/releases) page.
-2. **Upload** the file via the Integrations tab in your remote's web configurator (requires firmware >= 2.0.0).embers/zGVYf58)](https://discord.gg/zGVYf58)
+[![Discord](https://badgen.net/discord/online-members/zGVYf58)](https://discord.gg/zGVYf58)
 ![GitHub Release](https://img.shields.io/github/v/release/jackjpowell/uc-intg-zwave)
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/jackjpowell/uc-intg-zwave/total)
 ![Maintenance](https://img.shields.io/maintenance/yes/2025.svg)
 [![Buy Me A Coffee](https://img.shields.io/badge/Buy_Me_A_Coffee☕-FFDD00?logo=buy-me-a-coffee&logoColor=white&labelColor=grey)](https://buymeacoffee.com/jackpowell)
+
 
 # Z-Wave Integration for Unfolded Circle Remotes
 
