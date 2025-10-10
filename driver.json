@@ -1,0 +1,45 @@
+{
+  "driver_id": "zwave_driver",
+  "version": "0.1.0",
+  "min_core_api": "0.20.0",
+  "name": { "en": "Z-Wave" },
+  "icon": "uc:lightbulb",
+  "description": {
+    "en": "Control your Z-Wave devices from your Unfolded Circle Remote.",
+    "de": "Steuern Sie Ihre Z-Wave-Geräte von Ihrer Unfolded Circle Remote aus.",
+    "fr": "Contrôlez vos appareils Z-Wave depuis votre télécommande Unfolded Circle."
+  },
+  "developer": {
+    "name": "Jack Powell",
+    "email": "jackjpowell@gmail.com",
+    "url": "https://github.com/jackjpowell"
+  },
+  "home_page": "https://github.com/JackJPowell/uc-intg-zwave",
+  "setup_data_schema": {
+    "title": {
+      "en": "Integration setup",
+      "de": "Integrationssetup",
+      "fr": "Configuration de l'intégration"
+    },
+    "settings": [
+      {
+        "id": "info",
+        "label": {
+          "en": "Setup process",
+          "de": "Setup Fortschritt",
+          "fr": "Progression de la configuration"
+        },
+        "field": {
+          "label": {
+            "value": {
+              "en": "This integration will allow you to control Z-Wave devices on your network.",
+              "de": "Diese Integration ermöglicht es Ihnen, Z-Wave-Geräte in Ihrem Netzwerk zu steuern.",
+              "fr": "Cette intégration vous permettra de contrôler les appareils Z-Wave sur votre réseau."
+            }
+          }
+        }
+      }
+    ]
+  },
+  "release_date": "2025-10-09"
+}
