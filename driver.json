@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "min_core_api": "0.20.0",
   "name": { "en": "Z-Wave" },
-  "icon": "uc:lightbulb",
+  "icon": "uc:tower-broadcast",
   "description": {
     "en": "Control your Z-Wave devices from your Unfolded Circle Remote.",
     "de": "Steuern Sie Ihre Z-Wave-Geräte von Ihrer Unfolded Circle Remote aus.",

@@ -281,13 +281,14 @@ def _register_available_entities(device_config: ZWaveConfig) -> bool:
     _LOG.info("_register_available_entities for %s", device_config.identifier)
     entities = []
 
-    for entity in device_config.lights:
-        entities.append(ZWaveLight(device_config, entity, get_configured_device))
+    for device in _configured_devices.values():
+        for entity in device.lights:
+            entities.append(ZWaveLight(device_config, entity, get_configured_device))
 
-    for entity in entities:
-        if api.available_entities.contains(entity):
-            api.available_entities.remove(entity)
-        api.available_entities.add(entity)
+        for entity in entities:
+            if api.available_entities.contains(entity):
+                api.available_entities.remove(entity)
+            api.available_entities.add(entity)
     return True
 
 
