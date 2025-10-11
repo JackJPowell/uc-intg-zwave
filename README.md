@@ -12,13 +12,11 @@ Control your Z-Wave devices directly from your Unfolded Circle Remote via **Z-Wa
 ---
 
 ## Table of Contents
-
+- [Supported Devices](#supported-devices)
 - [Installation](#installation)
   - [Unfolded Circle Remote](#unfolded-circle-remote)
   - [Docker](#docker)
   - [Docker Compose](#docker-compose)
-- [Setup & Configuration](#setup--configuration)
-- [Supported Devices](#supported-devices)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
@@ -77,14 +75,6 @@ services:
       - UC_INTEGRATION_HTTP_PORT=9090   # Optional: set custom HTTP port
     restart: unless-stopped
 ```
-
----
-
-## Setup & Configuration
-
-After installation, open the integration in your remote’s web interface:
-
-1. **Manual Entry:** Enter your hub’s IP address manually.
 
 ---
 
