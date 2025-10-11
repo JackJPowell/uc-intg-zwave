@@ -542,7 +542,7 @@ dependencies = [
 requires-dist = [
     { name = "ucapi", specifier = "==0.3.1" },
     { name = "zeroconf", specifier = "==0.147.0" },
-    { name = "zwave-js-server-python", specifier = "==0.67.1" },
+    { name = "zwave-js-server-python", specifier = "==0.56.0" },
 ]
 
 [[package]]
@@ -722,13 +722,13 @@ wheels = [
 
 [[package]]
 name = "zwave-js-server-python"
-version = "0.67.1"
+version = "0.56.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/18/1e/b3eb0ac0109cefe73d42bc8c2443c6e4aa60e1cd7f2cb210ad92c23c3351/zwave_js_server_python-0.67.1.tar.gz", hash = "sha256:2dfcc6958872205937693eebd796389da60865edcf1237254a4e7559cf9490f6", size = 82469, upload-time = "2025-08-04T13:18:42.599Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8b/05/968dbd2115e27b80f5d4572a647d4045fd2b471320ca80f1be30d855d7d0/zwave_js_server_python-0.56.0.tar.gz", hash = "sha256:dcd062f7b4edb1aa3f92b1c76ab10ea35931b45f4463f4102cea60d41f847853", size = 84135, upload-time = "2024-05-12T04:41:04.125Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c0/fb/9d15b6629d81577c776de4ba81bcb990e30f9a9d96ff0965d786a7057101/zwave_js_server_python-0.67.1-py3-none-any.whl", hash = "sha256:a78b1bf33b8c2b06b791d9f01a57f14bae578c219d3d4cb7fb4e826e93403846", size = 105932, upload-time = "2025-08-04T13:18:41.435Z" },
+    { url = "https://files.pythonhosted.org/packages/80/3c/20c24cb1648e469a3d6c71a6fda75aa909e5f19dc1dd1dbfc424821afbc0/zwave_js_server_python-0.56.0-py3-none-any.whl", hash = "sha256:ffe12e776566623fd39dca78c84a24e0f6f91137566fc599e6411d9fff863df1", size = 106291, upload-time = "2024-05-12T04:41:01.826Z" },
 ]

@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "zwave-js-server-python==0.67.1",
+    "zwave-js-server-python==0.56.0",
     "ucapi==0.3.1",
     "zeroconf==0.147.0",
 ]
