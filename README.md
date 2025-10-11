@@ -13,33 +13,16 @@ Control your Z-Wave devices directly from your Unfolded Circle Remote via **Z-Wa
 
 ## Table of Contents
 
-- [Features](#features)
-- [Requirements](#requirements)
 - [Installation](#installation)
   - [Unfolded Circle Remote](#unfolded-circle-remote)
   - [Docker](#docker)
   - [Docker Compose](#docker-compose)
 - [Setup & Configuration](#setup--configuration)
 - [Supported Devices](#supported-devices)
-- [Advanced Features](#advanced-features)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
 - [Support](#support)
-
----
-
-## Features
-
-- **Lights & Switches:**  
-  - Toggle on/off  
-  - Adjust brightness (for dimmers)  
-  - View state  
-
-- **Future Plans:**  
-  - Support for Z-Wave scenes
-  - Support for Cover entities (shades, blinds)
-  - Support for sensors and other Z-Wave devices
 
 ---
 
