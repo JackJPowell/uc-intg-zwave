@@ -21,12 +21,7 @@ class ZWaveCoverInfo:
     device_id: str
     node_id: int
     current_state: int
+    position: int
     type: str
     name: str
     model: str
-
-
-@dataclass
-class ZWaveSceneInfo:
-    scene_id: str
-    name: str

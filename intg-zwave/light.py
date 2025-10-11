@@ -42,7 +42,10 @@ class ZWaveLight(Light):
         ]
 
         # Check if device supports dimming based on type
-        if "switch" in light_info.type.lower() and "multilevel" not in light_info.type.lower():
+        if (
+            "switch" in light_info.type.lower()
+            and "multilevel" not in light_info.type.lower()
+        ):
             # Binary switch, no dimming
             if light.Features.DIM in self.features:
                 self.features.remove(light.Features.DIM)
@@ -76,7 +79,7 @@ class ZWaveLight(Light):
         _LOG.info(
             "Got %s command request: %s %s", entity.id, cmd_id, params if params else ""
         )
-        device = self.get_device(self.config.identifier)
+        device: bridge.SmartHub = self.get_device(self.config.identifier)
 
         try:
             identifier = entity.id.split(".", 2)[2]
@@ -93,15 +96,15 @@ class ZWaveLight(Light):
                             )
                             return ucapi.StatusCodes.BAD_REQUEST
 
-                    res = await device.turn_on_light(
-                        f"{identifier}", brightness=brightness
+                    res = await device.control_light(
+                        identifier, 99 if brightness is None else brightness
                     )
                 case light.Commands.OFF:
                     _LOG.debug("Sending OFF command to Light")
-                    res = await device.turn_off_light(f"{identifier}")
+                    res = await device.control_light(identifier, 0)
                 case light.Commands.TOGGLE:
                     _LOG.debug("Sending TOGGLE command to Light")
-                    res = await device.toggle_light(f"{identifier}")
+                    res = await device.toggle_light(identifier)
 
         except Exception as ex:  # pylint: disable=broad-except
             _LOG.error("Error executing command %s: %s", cmd_id, ex)

@@ -119,7 +119,7 @@ async def driver_setup_handler(
             and "ip" in msg.input_values
             and msg.input_values.get("ip") != "manual"
         ):
-            return await _handle_pairing(msg)
+            return await _handle_creation(msg)
         if (
             _setup_step == SetupSteps.DISCOVER
             and "ip" in msg.input_values
@@ -195,7 +195,7 @@ async def _handle_discovery() -> RequestUserInput | SetupError:
     global _setup_step  # pylint: disable=global-statement
 
     discovery = ZWaveDiscovery()
-    await discovery.scan()
+    # await discovery.scan()
     if len(discovery.found_services) > 0:
         _LOG.debug("Found Z-Wave JS Server instances")
 
@@ -356,15 +356,6 @@ async def _handle_driver_setup(
     return await _handle_discovery()
 
 
-async def _handle_pairing(
-    msg: DriverSetupRequest,
-) -> RequestUserInput | SetupError:
-    """
-    Handle pairing step (not needed for Z-Wave JS Server).
-    """
-    return await _handle_creation(msg)
-
-
 async def _handle_creation(
     msg: DriverSetupRequest,
 ) -> RequestUserInput | SetupError:
@@ -398,27 +389,60 @@ async def _handle_creation(
                     _LOG.error("Failed to connect to Z-Wave JS Server at: %s", ws_url)
                     return SetupError(IntegrationSetupError.CONNECTION_REFUSED)
 
+                # Get controller information
+                controller_info = zwave_client.get_controller_info()
+                _LOG.info("Z-Wave Controller info: %s", controller_info)
+
                 # Get devices from Z-Wave network
                 devices = zwave_client.get_devices()
-                _LOG.debug("Z-Wave devices info: %s", devices)
+                _LOG.debug("Found %d Z-Wave devices", len(devices))
 
-                # Z-Wave scenes can be added later if needed
-                # For now, use empty list
+                # Generate identifier from controller's home_id (unique to each Z-Wave network)
+                home_id = controller_info.get("home_id")
+                if home_id:
+                    # Home ID is a unique identifier for the Z-Wave network
+                    controller_id = f"zwave_{home_id:08x}"
+                    _LOG.debug("Using Home ID as identifier: %s", controller_id)
+                else:
+                    # Fallback to URL-based identifier if home_id not available
+                    controller_id = (
+                        ws_url.replace("ws://", "")
+                        .replace("wss://", "")
+                        .replace(":", "_")
+                        .replace("/", "_")
+                    )
+                    _LOG.warning(
+                        "Home ID not available, using URL-based identifier: %s",
+                        controller_id,
+                    )
 
-                # Generate a unique identifier for this Z-Wave controller
-                # Using the WebSocket URL as part of the identifier
-                controller_id = (
-                    ws_url.replace("ws://", "")
-                    .replace("wss://", "")
-                    .replace(":", "_")
-                    .replace("/", "_")
-                )
+                # Generate a friendly name
+                sdk_version = controller_info.get("sdk_version", "")
+                library_version = controller_info.get("library_version", "")
+                controller_type = controller_info.get("type_name", "Controller")
+
+                if sdk_version:
+                    controller_name = f"Z-Wave {controller_type} (SDK {sdk_version})"
+                elif library_version:
+                    controller_name = f"Z-Wave {controller_type} (v{library_version})"
+                else:
+                    controller_name = f"Z-Wave {controller_type}"
+
+                # Generate model information
+                manufacturer_id = controller_info.get("manufacturer_id")
+                product_type = controller_info.get("product_type")
+                product_id = controller_info.get("product_id")
+
+                if manufacturer_id and product_type and product_id:
+                    model = f"Z-Wave Controller (Mfr: {manufacturer_id:04x}, Type: {product_type:04x}, ID: {product_id:04x})"
+                else:
+                    model = "Z-Wave JS Server"
 
                 device = ZWaveConfig(
                     identifier=controller_id,
                     address=ws_url,
-                    name=f"Z-Wave Controller ({ws_url.split('//')[1].split(':')[0]})",
-                    model="Z-Wave JS Server",
+                    name=controller_name,
+                    model=model,
                 )
 
                 config.devices.add_or_update(device)

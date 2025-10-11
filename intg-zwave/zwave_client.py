@@ -69,6 +69,55 @@ class ZWaveClient:
             await self.session.close()
         self.connected = False
 
+    def get_controller_info(self) -> Dict[str, Any]:
+        """Get information about the Z-Wave controller.
+
+        Returns:
+            Dictionary with controller information including home_id, sdk_version, etc.
+        """
+        if not self.client or not self.client.driver:
+            return {}
+
+        controller = self.client.driver.controller
+        driver = self.client.driver
+
+        info = {
+            "home_id": getattr(controller, "home_id", None),
+            "own_node_id": getattr(controller, "own_node_id", None),
+            "is_secondary": getattr(controller, "is_secondary", None),
+            "is_using_home_id_from_other_network": getattr(
+                controller, "is_using_home_id_from_other_network", None
+            ),
+            "is_SIS_present": getattr(controller, "is_SIS_present", None),
+            "was_real_primary": getattr(controller, "was_real_primary", None),
+            "is_static_update_controller": getattr(
+                controller, "is_static_update_controller", None
+            ),
+            "is_slave": getattr(controller, "is_slave", None),
+            "serial_api_version": getattr(controller, "serial_api_version", None),
+            "manufacturer_id": getattr(controller, "manufacturer_id", None),
+            "product_type": getattr(controller, "product_type", None),
+            "product_id": getattr(controller, "product_id", None),
+            "supported_function_types": getattr(
+                controller, "supported_function_types", None
+            ),
+            "suc_node_id": getattr(controller, "suc_node_id", None),
+            "supports_timers": getattr(controller, "supports_timers", None),
+            "sdk_version": getattr(driver, "controller", {})
+            and getattr(controller, "sdk_version", None),
+            "library_version": getattr(controller, "library_version", None),
+            "type": getattr(controller, "type", None),
+            "zwaveApiVersion": getattr(controller, "zwaveApiVersion", None),
+        }
+
+        # Get a friendly name for the controller type
+        if info["type"]:
+            info["type_name"] = str(info["type"])
+        else:
+            info["type_name"] = "Unknown"
+
+        return info
+
     def get_devices(self) -> Dict[int, Dict[str, Any]]:
         """Get information about all Z-Wave devices.
 
@@ -150,14 +199,11 @@ class ZWaveClient:
             return False
 
         try:
-            value_ids = await node.async_get_defined_value_ids()
-            for value_id in value_ids:
-                val = node.values.get(value_id)
+            for value_id in node.values.values():
                 if (
-                    val
-                    and hasattr(val, "property_name")
-                    and val.property_name == property_name
-                    and val.metadata.writeable
+                    hasattr(value_id, "property_name")
+                    and value_id.property_name == property_name
+                    and value_id.metadata.writeable
                 ):
                     await node.async_set_value(value_id, value)
                     return True
@@ -175,7 +221,7 @@ class ZWaveClient:
         Returns:
             True if successful, False otherwise
         """
-        return await self.set_device_value(node_id, "targetValue", 100)
+        return await self.set_device_value(node_id, "targetValue", 99)
 
     async def turn_off(self, node_id: int) -> bool:
         """Turn off a device (switch/dimmer).

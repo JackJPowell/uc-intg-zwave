@@ -17,6 +17,7 @@ import ucapi
 import ucapi.api as uc
 from ucapi import EntityTypes
 from light import ZWaveLight
+from cover import ZWaveCover
 from config import (
     ZWaveConfig,
     device_from_entity_id,
@@ -36,6 +37,17 @@ asyncio.set_event_loop(_LOOP)
 # Global variables
 api = uc.IntegrationAPI(_LOOP)
 _configured_devices: dict[str, bridge.SmartHub] = {}
+
+
+@api.listens_to(ucapi.Events.CONNECT)
+async def on_r2_connect_cmd() -> None:
+    """Connect all configured devices when the Remote Two sends the connect command."""
+    _LOG.debug("Client connect command: connecting device(s)")
+    await api.set_device_state(
+        ucapi.DeviceStates.CONNECTED
+    )  # just to make sure the device state is set
+    for device in _configured_devices.values():
+        await device.connect()
 
 
 @api.listens_to(ucapi.Events.DISCONNECT)
@@ -58,6 +70,18 @@ async def on_r2_enter_standby() -> None:
         await device.disconnect()
 
 
+@api.listens_to(ucapi.Events.EXIT_STANDBY)
+async def on_r2_exit_standby() -> None:
+    """
+    Exit standby notification from Remote Two.
+
+    Connect all Z-Wave instances.
+    """
+    _LOG.debug("Exit standby event: connecting device(s)")
+    for device in _configured_devices.values():
+        await device.connect()
+
+
 @api.listens_to(ucapi.Events.SUBSCRIBE_ENTITIES)
 async def on_subscribe_entities(entity_ids: list[str]) -> None:
     """
@@ -70,16 +94,18 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
     if entity_ids is not None and len(entity_ids) > 0:
         device_id = device_from_entity_id(entity_ids[0])
         if device_id not in _configured_devices:
-            device = config.devices.get(device_id)
-            if device:
-                _add_configured_device(device)
+            device_config = config.devices.get(device_id)
+            if device_config:
+                # Add and connect to the device, which will also register entities
+                await _add_configured_device(device_config, connect=True)
             else:
                 _LOG.error(
                     "Failed to subscribe entity %s: no instance found", device_id
                 )
                 return
-        device = _configured_devices[device_id]
-        if not device.is_connected:
+
+        device = _configured_devices.get(device_id)
+        if device and not device.is_connected:
             attempt = 0
             while attempt := attempt + 1 < 4:
                 _LOG.debug(
@@ -87,29 +113,32 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
                     device_id,
                     attempt,
                 )
-                if not await device.connect():
+                if await device.connect():
+                    # After successful connection, register entities from the hub
+                    await _register_available_entities_from_hub(device)
+                    break
+                else:
                     await device.disconnect()
                     await asyncio.sleep(0.5)
-                else:
-                    break
 
     for entity_id in entity_ids:
         device_id = device_from_entity_id(entity_id)
         device = _configured_devices[device_id]
         match type_from_entity_id(entity_id):
-            case EntityTypes.BUTTON.value:
+            case EntityTypes.COVER.value:
                 entity = next(
                     (
-                        scene
-                        for scene in device.scenes
-                        if scene.scene_id == entity_from_entity_id(entity_id)
+                        cover
+                        for cover in device.covers
+                        if cover.node_id == entity_from_entity_id(entity_id)
                     ),
                     None,
                 )
 
                 if entity is not None:
                     update = {}
-                    update["state"] = "AVAILABLE"
+                    update["state"] = "OPEN" if entity.position > 0 else "CLOSED"
+                    update["position"] = int(entity.position)
                     api.configured_entities.update_attributes(entity_id, update)
             case EntityTypes.LIGHT.value:
                 entity = next(
@@ -159,21 +188,16 @@ async def on_device_disconnected(device_id: str):
         if configured_entity is None:
             continue
 
-        if configured_entity.entity_type == ucapi.EntityTypes.LIGHT:
-            api.configured_entities.update_attributes(
-                entity_id,
-                {ucapi.light.Attributes.STATE: ucapi.light.States.UNAVAILABLE},
-            )
-        elif configured_entity.entity_type == ucapi.EntityTypes.COVER:
-            api.configured_entities.update_attributes(
-                entity_id,
-                {ucapi.cover.Attributes.STATE: ucapi.cover.States.UNAVAILABLE},
-            )
-        elif configured_entity.entity_type == ucapi.EntityTypes.BUTTON:
-            api.configured_entities.update_attributes(
-                entity_id,
-                {ucapi.button.Attributes.STATE: ucapi.button.States.UNAVAILABLE},
-            )
+        # if configured_entity.entity_type == ucapi.EntityTypes.LIGHT:
+        #     api.configured_entities.update_attributes(
+        #         entity_id,
+        #         {ucapi.light.Attributes.STATE: ucapi.light.States.UNAVAILABLE},
+        #     )
+        # elif configured_entity.entity_type == ucapi.EntityTypes.COVER:
+        #     api.configured_entities.update_attributes(
+        #         entity_id,
+        #         {ucapi.cover.Attributes.STATE: ucapi.cover.States.UNAVAILABLE},
+        #     )
 
 
 async def on_device_connection_error(device_id: str, message):
@@ -194,11 +218,6 @@ async def on_device_connection_error(device_id: str, message):
             api.configured_entities.update_attributes(
                 entity_id,
                 {ucapi.cover.Attributes.STATE: ucapi.cover.States.UNAVAILABLE},
-            )
-        elif configured_entity.entity_type == ucapi.EntityTypes.BUTTON:
-            api.configured_entities.update_attributes(
-                entity_id,
-                {ucapi.button.Attributes.STATE: ucapi.button.States.UNAVAILABLE},
             )
 
     await api.set_device_state(ucapi.DeviceStates.ERROR)
@@ -224,12 +243,12 @@ async def on_device_update(entity_id: str, update: dict[str, Any] | None) -> Non
         if "brightness" in update:
             attributes[ucapi.light.Attributes.BRIGHTNESS] = update["brightness"]
 
-    elif configured_entity.entity_type == ucapi.EntityTypes.BUTTON:
+    elif isinstance(configured_entity, ZWaveCover):
         if "state" in update:
-            attributes[ucapi.button.Attributes.STATE] = "AVAILABLE"
+            attributes[ucapi.cover.Attributes.STATE] = update["state"]
 
-    # elif isinstance(configured_entity, ZwaveCover):
-    #     target_entity = api.available_entities.get(identifier)
+        if "position" in update:
+            attributes[ucapi.cover.Attributes.POSITION] = update["position"]
 
     if attributes:
         if api.configured_entities.contains(entity_id):
@@ -238,7 +257,14 @@ async def on_device_update(entity_id: str, update: dict[str, Any] | None) -> Non
             api.available_entities.update_attributes(entity_id, attributes)
 
 
-def _add_configured_device(device_config: ZWaveConfig, connect: bool = False) -> None:
+async def _add_configured_device(
+    device_config: ZWaveConfig, connect: bool = True
+) -> None:
+    """Add and optionally connect to a Z-Wave controller, then register its entities.
+
+    :param device_config: The Z-Wave controller configuration
+    :param connect: Whether to connect immediately (default True)
+    """
     # the device should not yet be configured, but better be safe
     if device_config.identifier in _configured_devices:
         _LOG.debug(
@@ -246,50 +272,97 @@ def _add_configured_device(device_config: ZWaveConfig, connect: bool = False) ->
             device_config,
         )
         device = _configured_devices[str(device_config.identifier)]
-        _LOOP.create_task(device.disconnect())
-    else:
-        _LOG.debug(
-            "Adding new device: %s (%s)",
-            device_config.identifier,
-            device_config.address,
-        )
-        device = bridge.SmartHub(device_config, loop=_LOOP)
-        device.events.on(bridge.EVENTS.CONNECTED, on_device_connected)
-        device.events.on(bridge.EVENTS.DISCONNECTED, on_device_disconnected)
-        device.events.on(bridge.EVENTS.ERROR, on_device_connection_error)
-        device.events.on(bridge.EVENTS.UPDATE, on_device_update)
+        await device.disconnect()
 
-        _configured_devices[str(device.identifier)] = device
+    _LOG.debug(
+        "Adding new device: %s (%s)",
+        device_config.identifier,
+        device_config.address,
+    )
+    device = bridge.SmartHub(device_config, loop=_LOOP)
+    device.events.on(bridge.EVENTS.CONNECTED, on_device_connected)
+    device.events.on(bridge.EVENTS.DISCONNECTED, on_device_disconnected)
+    device.events.on(bridge.EVENTS.ERROR, on_device_connection_error)
+    device.events.on(bridge.EVENTS.UPDATE, on_device_update)
 
-    async def start_connection():
-        await device.connect()
+    _configured_devices[str(device.identifier)] = device
 
     if connect:
-        _LOOP.create_task(start_connection())
+        # Connect to the Z-Wave controller first
+        _LOG.debug("Connecting to Z-Wave controller: %s", device_config.identifier)
+        connected = await device.connect()
 
-    _register_available_entities(device_config)
+        if connected:
+            _LOG.info(
+                "Successfully connected to Z-Wave controller: %s",
+                device_config.identifier,
+            )
+
+            # Now that we're connected, register entities from the hub
+            await _register_available_entities_from_hub(device)
+        else:
+            _LOG.error(
+                "Failed to connect to Z-Wave controller: %s", device_config.identifier
+            )
 
 
-def _register_available_entities(device_config: ZWaveConfig) -> bool:
+async def _register_available_entities_from_hub(device: bridge.SmartHub) -> bool:
     """
-    Add a new device to the available entities.
+    Register entities by querying the Z-Wave hub for its devices.
 
-    :param identifier: identifier
-    :param name: Friendly name
-    :return: True if added, False if the device was already in storage.
+    This is called after the hub is connected and retrieves the actual
+    devices from the Z-Wave network rather than from stored config.
+
+    :param device: The connected SmartHub instance
+    :return: True if entities were registered successfully
     """
-    _LOG.info("_register_available_entities for %s", device_config.identifier)
-    entities = []
+    _LOG.info("Registering available entities from Z-Wave hub: %s", device.identifier)
 
-    for device in _configured_devices.values():
-        for entity in device.lights:
-            entities.append(ZWaveLight(device_config, entity, get_configured_device))
+    try:
+        # Get lights from the hub (this queries the Z-Wave network)
+        lights = await device.get_lights()
+        _LOG.debug("Found %d lights on Z-Wave network", len(lights))
 
+        entities = []
+
+        # Create light entities from what the hub reports
+        for light_info in lights:
+            _LOG.debug(
+                "Registering light: %s (node %d)", light_info.name, light_info.node_id
+            )
+            light_entity = ZWaveLight(
+                device.device_config, light_info, get_configured_device
+            )
+            entities.append(light_entity)
+
+        # Get covers from the hub (this queries the Z-Wave network)
+        covers = await device.get_covers()
+        _LOG.debug("Found %d covers on Z-Wave network", len(covers))
+
+        # Create cover entities from what the hub reports
+        for cover_info in covers:
+            _LOG.debug(
+                "Registering cover: %s (node %d)", cover_info.name, cover_info.node_id
+            )
+            cover_entity = ZWaveCover(
+                device.device_config, cover_info, get_configured_device
+            )
+            entities.append(cover_entity)
+
+        # Register all entities with the API
         for entity in entities:
-            if api.available_entities.contains(entity):
-                api.available_entities.remove(entity)
+            if api.available_entities.contains(entity.id):
+                _LOG.debug("Removing existing entity: %s", entity.id)
+                api.available_entities.remove(entity.id)
+            _LOG.debug("Adding entity: %s", entity.id)
             api.available_entities.add(entity)
-    return True
+
+        _LOG.info("Successfully registered %d entities from Z-Wave hub", len(entities))
+        return True
+
+    except Exception as ex:  # pylint: disable=broad-exception-caught
+        _LOG.error("Error registering entities from hub: %s", ex)
+        return False
 
 
 def _entities_from_device_id(device_id: str) -> list[str]:
@@ -299,17 +372,17 @@ def _entities_from_device_id(device_id: str) -> list[str]:
     :param device_id: the device identifier
     :return: list of entity identifiers
     """
-    # get from config
     entities = []
-    device = config.devices.get(device_id)
+    device = _configured_devices.get(device_id)
     if device:
+        # Get entities from the actual hub, not from stored config
         entities.extend(
-            create_entity_id(device.identifier, scene.scene_id, EntityTypes.BUTTON)
-            for scene in device.scenes
+            create_entity_id(device.identifier, str(light.node_id), EntityTypes.LIGHT)
+            for light in device.lights
         )
         entities.extend(
-            create_entity_id(device.identifier, light.device_id, EntityTypes.LIGHT)
-            for light in device.lights
+            create_entity_id(device.identifier, str(cover.node_id), EntityTypes.COVER)
+            for cover in device.covers
         )
     return entities
 
@@ -317,7 +390,8 @@ def _entities_from_device_id(device_id: str) -> list[str]:
 def on_device_added(device: ZWaveConfig) -> None:
     """Handle a newly added device in the configuration."""
     _LOG.debug("New Z-Wave controller added: %s", device)
-    _add_configured_device(device)
+    # Schedule the async device addition
+    _LOOP.create_task(_add_configured_device(device, connect=True))
 
 
 def on_device_removed(device: ZWaveConfig | None) -> None:
@@ -361,8 +435,10 @@ async def main():
         api.config_dir_path, on_device_added, on_device_removed
     )
 
+    # Connect to all configured Z-Wave controllers and register their entities
     for device_config in config.devices.all():
-        _register_available_entities(device_config)
+        _LOG.info("Initializing Z-Wave controller: %s", device_config.identifier)
+        await _add_configured_device(device_config, connect=True)
 
     await api.init("driver.json", setup.driver_setup_handler)
 
