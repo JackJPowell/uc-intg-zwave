@@ -51,7 +51,7 @@ class PerformanceMonitor:
         )
 
         lines.append(
-            f"\n{'Function':<50} {'Calls':<8} {'Total(ms)':<12} {'Avg(ms)':<12} {'Max(ms)':<12}"
+            "\nFunction                                          Calls    Total(ms)    Avg(ms)      Max(ms)"
         )
         lines.append("-" * 100)
 
@@ -71,8 +71,11 @@ class PerformanceMonitor:
             lines.append(f"SLOW CALLS (>{self.slow_threshold_ms}ms)")
             lines.append("=" * 80)
             for entry in _slow_calls[-20:]:  # Last 20 slow calls
+                time_ms = entry["time"]
+                func = entry["func"]
+                timestamp = entry["timestamp"]
                 lines.append(
-                    f"  {entry['time']:.2f}ms - {entry['func']} - {entry['timestamp']}"
+                    f"  {time_ms:.2f}ms - {func} - {timestamp}"
                 )
 
         lines.append("=" * 80 + "\n")

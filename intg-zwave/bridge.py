@@ -171,9 +171,6 @@ class SmartHub:
         """Disconnect from the Z-Wave controller."""
         _LOG.debug("[%s] Disconnecting from Z-Wave controller", self.log_id)
 
-        # Stop the watchdog
-        await self._stop_watchdog()
-
         # Remove event handlers before disconnecting
         self._remove_event_handlers()
 
