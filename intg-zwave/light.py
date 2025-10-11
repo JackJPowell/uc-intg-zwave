@@ -50,14 +50,17 @@ class ZWaveLight(Light):
             if light.Features.DIM in self.features:
                 self.features.remove(light.Features.DIM)
 
-        state = States.OFF
         super().__init__(
             entity_id,
             light_info.name,
             self.features,
             attributes={
-                Attributes.STATE: state,
-                Attributes.BRIGHTNESS: 0,
+                Attributes.STATE: States.ON
+                if light_info.brightness > 0
+                else States.OFF,
+                Attributes.BRIGHTNESS: "100"
+                if light_info.brightness == 99
+                else str(light_info.brightness),
             },
             cmd_handler=self.cmd_handler,
         )
@@ -87,8 +90,8 @@ class ZWaveLight(Light):
             match cmd_id:
                 case light.Commands.ON:
                     if params and Attributes.BRIGHTNESS in params:
-                        brightness = int(params[Attributes.BRIGHTNESS])
-                        if brightness < 0 or brightness > 255:
+                        brightness = int(params[Attributes.BRIGHTNESS] / 255 * 100)
+                        if brightness < 0 or brightness > 100:
                             _LOG.error(
                                 "Invalid brightness value %s for command %s",
                                 brightness,

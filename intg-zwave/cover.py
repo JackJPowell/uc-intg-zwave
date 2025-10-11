@@ -50,8 +50,12 @@ class ZWaveCover(Cover):
                 cover.Features.POSITION,
             ],
             attributes={
-                cover.Attributes.STATE: "UNKNOWN",
-                cover.Attributes.POSITION: 0,
+                cover.Attributes.STATE: "OPEN"
+                if cover_info.current_state > 50
+                else "CLOSED",
+                cover.Attributes.POSITION: 100
+                if cover_info.position == 99
+                else cover_info.position,
             },
             device_class=cover.DeviceClasses.SHADE,
             cmd_handler=self.cover_cmd_handler,

@@ -145,7 +145,7 @@ class SmartHub:
 
             self._is_connected = True
             self._state = PowerState.ON
-            _LOG.info("[%s] Connected to Z-Wave controller", self.log_id)
+            _LOG.info("🏠 BRIDGE [%s]: Connected to Z-Wave controller", self.log_id)
 
             # Set up event handlers
             self._setup_event_handlers()
@@ -312,7 +312,11 @@ class SmartHub:
 
     def _on_value_updated(self, event_info: dict) -> None:
         """Handle Z-Wave value updated events."""
-        _LOG.debug("[%s] Value updated: %s", self.log_id, event_info)
+        _LOG.debug(
+            "⚡ BRIDGE [%s]: Value updated - node %d",
+            self.log_id,
+            event_info.get("node_id"),
+        )
         node_id = event_info.get("node_id")
         if node_id:
             # Check if it's a light or cover and update accordingly
@@ -344,27 +348,10 @@ class SmartHub:
             # Update the light's state from event_info if available
             if event_info:
                 # Extract new values from event_info
-                new_value = event_info.get("value")
-                value_type = event_info.get("value_type", "").lower()
-
-                if "level" in value_type or "brightness" in value_type:
-                    # Update brightness (0-100 or 0-255 depending on Z-Wave device)
-                    if new_value is not None:
-                        light.brightness = (
-                            int(new_value)
-                            if new_value <= 255
-                            else int(new_value * 255 / 100)
-                        )
-                        light.current_state = new_value
-                elif "switch" in value_type or "state" in value_type:
-                    # Update on/off state
-                    light.current_state = new_value
-                    if new_value > 0:
-                        light.brightness = (
-                            255 if light.brightness == 0 else light.brightness
-                        )
-                    else:
-                        light.brightness = 0
+                light.brightness = 0
+                if event_info.get("new_value") > 0:
+                    light.brightness = event_info.get("new_value") * 255 / 100
+                light.current_state = light.brightness
 
                 _LOG.debug(
                     "[%s] Updated light cache: node_id=%s, state=%s, brightness=%s",
@@ -407,17 +394,12 @@ class SmartHub:
                 or "dimmer" in device_type
                 or "multilevel" in device_type
             ) and "motor control" not in device_type:
-                # Try to get current state
-                current_state = 0
-                brightness = 0
-                # This would need to be enhanced based on actual Z-Wave device values
-
                 light_list.append(
                     ZWaveLightInfo(
                         device_id=str(node_id),
                         node_id=node_id,
-                        current_state=current_state,
-                        brightness=brightness,
+                        current_state=device_info.get("current_value", 0),
+                        brightness=device_info.get("current_value", 0),
                         type=device_type,
                         name=device_info.get("name", f"Node {node_id}"),
                         model=device_info.get("device_type", "Unknown"),
@@ -441,7 +423,7 @@ class SmartHub:
                 await self._zwave_client.set_dimmer_level(node_id, brightness)
 
             update["state"] = "ON" if brightness > 0 else "OFF"
-            update["brightness"] = brightness
+            update["brightness"] = 100 if brightness == 99 else brightness
 
             self.events.emit(
                 EVENTS.UPDATE,
@@ -508,17 +490,12 @@ class SmartHub:
                 or "window covering" in device_type
                 or "motor control" in device_type
             ):
-                # Try to get current state
-                current_state = 0  # State (open/closed)
-                position = 0  # Position (0-100)
-                # This would need to be enhanced based on actual Z-Wave device values
-
                 cover_list.append(
                     ZWaveCoverInfo(
                         device_id=str(node_id),
                         node_id=node_id,
-                        current_state=current_state,
-                        position=position,
+                        current_state=device_info.get("current_value", 0),
+                        position=device_info.get("current_value", 0),
                         type=device_type,
                         name=device_info.get("name", f"Node {node_id}"),
                         model=device_info.get("device_type", "Unknown"),
@@ -538,9 +515,9 @@ class SmartHub:
             await self._zwave_client.set_dimmer_level(node_id, position)
 
             # Determine state based on position
-            if position == 0:
+            if position <= 5:
                 state = "CLOSED"
-            elif position == 100:
+            elif position >= 95:
                 state = "OPEN"
             else:
                 state = "OPENING" if position > 50 else "CLOSING"
@@ -598,14 +575,8 @@ class SmartHub:
             # Update the cover's state from event_info if available
             if event_info:
                 # Extract new values from event_info
-                new_value = event_info.get("value")
-                value_type = event_info.get("value_type", "").lower()
-
-                if "level" in value_type or "position" in value_type:
-                    # Update position (0-100)
-                    if new_value is not None:
-                        cover.position = int(new_value)
-                        cover.current_state = int(new_value)
+                cover.position = event_info.get("new_value")
+                cover.current_state = cover.position
 
                 _LOG.debug(
                     "[%s] Updated cover cache: node_id=%s, position=%s",
@@ -616,9 +587,9 @@ class SmartHub:
 
             # Determine state based on position
             position = cover.position
-            if position == 0:
+            if position <= 5:
                 state = "CLOSED"
-            elif position == 100:
+            elif position >= 95:
                 state = "OPEN"
             else:
                 state = "OPENING" if position > 50 else "CLOSING"

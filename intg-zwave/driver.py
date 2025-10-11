@@ -26,6 +26,17 @@ from config import (
     type_from_entity_id,
 )
 import bridge
+import performance
+from performance import track_performance, log_call, CallTracker
+
+# Enable performance monitoring
+performance.enable_performance_monitoring()
+performance.set_slow_call_threshold(100)  # Warn if >100ms
+
+_connect_tracker = CallTracker("on_r2_connect", warn_after=1)
+_subscribe_tracker = CallTracker("on_subscribe_entities", warn_after=1)
+_add_device_tracker = CallTracker("_add_configured_device", warn_after=2)
+_register_tracker = CallTracker("_register_available_entities_from_hub", warn_after=1)
 
 _LOG = logging.getLogger("driver")  # avoid having __main__ in log messages
 if sys.platform == "win32":
@@ -39,10 +50,12 @@ api = uc.IntegrationAPI(_LOOP)
 _configured_devices: dict[str, bridge.SmartHub] = {}
 
 
+@track_performance
+@log_call(prefix="🔌")
 @api.listens_to(ucapi.Events.CONNECT)
 async def on_r2_connect_cmd() -> None:
     """Connect all configured devices when the Remote Two sends the connect command."""
-    _LOG.debug("Client connect command: connecting device(s)")
+    _LOG.info("🔌 DRIVER: Client connect command - connecting device(s)")
     await api.set_device_state(
         ucapi.DeviceStates.CONNECTED
     )  # just to make sure the device state is set
@@ -82,6 +95,8 @@ async def on_r2_exit_standby() -> None:
         await device.connect()
 
 
+@track_performance
+@log_call(prefix="📞")
 @api.listens_to(ucapi.Events.SUBSCRIBE_ENTITIES)
 async def on_subscribe_entities(entity_ids: list[str]) -> None:
     """
@@ -89,7 +104,7 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
 
     :param entity_ids: entity identifiers.
     """
-    _LOG.debug("Subscribe entities event: %s", entity_ids)
+    _LOG.info("📞 DRIVER: Subscribe request for %d entities", len(entity_ids))
 
     if entity_ids is not None and len(entity_ids) > 0:
         device_id = device_from_entity_id(entity_ids[0])
@@ -171,7 +186,7 @@ async def on_unsubscribe_entities(entity_ids: list[str]) -> None:
 
 async def on_device_connected(device_id: str):
     """Handle device connection."""
-    _LOG.debug("Z-Wave controller connected: %s", device_id)
+    _LOG.info("✅ DRIVER: Z-Wave controller connected: %s", device_id)
     if str(device_id) not in _configured_devices:
         _LOG.warning("Z-Wave controller %s is not configured", device_id)
         return
@@ -257,6 +272,7 @@ async def on_device_update(entity_id: str, update: dict[str, Any] | None) -> Non
             api.available_entities.update_attributes(entity_id, attributes)
 
 
+@track_performance
 async def _add_configured_device(
     device_config: ZWaveConfig, connect: bool = True
 ) -> None:
@@ -306,6 +322,7 @@ async def _add_configured_device(
             )
 
 
+@track_performance
 async def _register_available_entities_from_hub(device: bridge.SmartHub) -> bool:
     """
     Register entities by querying the Z-Wave hub for its devices.
@@ -420,6 +437,14 @@ def get_configured_device(device_id: str) -> bridge.SmartHub | None:
     return _configured_devices.get(str(device_id))
 
 
+async def performance_reporter():
+    """Periodically print performance stats."""
+    while True:
+        await asyncio.sleep(30)  # Every 30 seconds
+        performance.print_performance_report()
+        performance.reset_performance_stats()  # Reset for next period
+
+
 async def main():
     """Start the Remote Two/3 integration driver."""
     logging.basicConfig()
@@ -430,17 +455,28 @@ async def main():
     logging.getLogger("config").setLevel(level)
     logging.getLogger("discover").setLevel(level)
     logging.getLogger("setup").setLevel(level)
+    logging.getLogger("performance").setLevel(level)
+
+    # Enable performance monitoring
+    performance.enable_performance_monitoring()
+    _LOG.info("🔍 Performance monitoring enabled")
 
     config.devices = config.Devices(
         api.config_dir_path, on_device_added, on_device_removed
     )
 
-    # Connect to all configured Z-Wave controllers and register their entities
+    # Connect to all configured Z-Wave controllers
     for device_config in config.devices.all():
-        _LOG.info("Initializing Z-Wave controller: %s", device_config.identifier)
+        _LOG.info(
+            "🏠 DRIVER: Initializing Z-Wave controller: %s", device_config.identifier
+        )
         await _add_configured_device(device_config, connect=True)
 
     await api.init("driver.json", setup.driver_setup_handler)
+
+    # Start performance reporter
+    _LOOP.create_task(performance_reporter())
+    _LOG.info("📊 Performance reporter started (reports every 30s)")
 
 
 if __name__ == "__main__":

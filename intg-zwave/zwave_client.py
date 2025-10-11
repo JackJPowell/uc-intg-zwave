@@ -131,6 +131,15 @@ class ZWaveClient:
         nodes = self.client.driver.controller.nodes
 
         for node_id, node in nodes.items():
+            current_value = 0
+            for value_id in node.values.values():
+                if (
+                    hasattr(value_id, "property_name")
+                    and value_id.property_name == "currentValue"
+                ):
+                    current_value = value_id.value
+                    break
+
             devices[node_id] = {
                 "id": node_id,
                 "name": node.name or f"Node {node_id}",
@@ -141,6 +150,7 @@ class ZWaveClient:
                 "device_type": self._get_device_type(node),
                 "is_alive": node.status == 4,
                 "is_asleep": node.status == 1,
+                "current_value": current_value,
             }
 
         return devices
