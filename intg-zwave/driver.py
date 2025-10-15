@@ -208,21 +208,21 @@ async def on_device_disconnected(device_id: str):
     """Handle device disconnection."""
     _LOG.info("🔌 DRIVER: Z-Wave controller disconnected: %s", device_id)
 
-    for entity_id in _entities_from_device_id(device_id):
-        configured_entity = api.configured_entities.get(entity_id)
-        if configured_entity is None:
-            continue
+    # for entity_id in _entities_from_device_id(device_id):
+    #     configured_entity = api.configured_entities.get(entity_id)
+    #     if configured_entity is None:
+    #         continue
 
-        # if configured_entity.entity_type == ucapi.EntityTypes.LIGHT:
-        #     api.configured_entities.update_attributes(
-        #         entity_id,
-        #         {ucapi.light.Attributes.STATE: ucapi.light.States.UNAVAILABLE},
-        #     )
-        # elif configured_entity.entity_type == ucapi.EntityTypes.COVER:
-        #     api.configured_entities.update_attributes(
-        #         entity_id,
-        #         {ucapi.cover.Attributes.STATE: ucapi.cover.States.UNAVAILABLE},
-        #     )
+    # if configured_entity.entity_type == ucapi.EntityTypes.LIGHT:
+    #     api.configured_entities.update_attributes(
+    #         entity_id,
+    #         {ucapi.light.Attributes.STATE: ucapi.light.States.UNAVAILABLE},
+    #     )
+    # elif configured_entity.entity_type == ucapi.EntityTypes.COVER:
+    #     api.configured_entities.update_attributes(
+    #         entity_id,
+    #         {ucapi.cover.Attributes.STATE: ucapi.cover.States.UNAVAILABLE},
+    #     )
 
 
 @track_performance
@@ -326,6 +326,7 @@ async def _add_configured_device(
                 "🏠 DRIVER: Connecting to Z-Wave controller: %s",
                 device_config.identifier,
             )
+            await asyncio.sleep(0.05)
             connected = await device.connect()
 
             if connected:
@@ -363,13 +364,15 @@ async def _register_available_entities_from_hub(device: bridge.SmartHub) -> bool
 
         try:
             # Get lights from the hub (this queries the Z-Wave network)
-            lights = await device.get_lights()
-            _LOG.info("📡 DRIVER: Found %d lights on Z-Wave network", len(lights))
+            await device.get_lights()
+            _LOG.info(
+                "📡 DRIVER: Found %d lights on Z-Wave network", len(device.lights)
+            )
 
             entities = []
 
             # Create light entities from what the hub reports
-            for light_info in lights:
+            for light_info in device.lights:
                 _LOG.debug(
                     "⚡ DRIVER: Registering light: %s (node %d)",
                     light_info.name,
@@ -381,11 +384,13 @@ async def _register_available_entities_from_hub(device: bridge.SmartHub) -> bool
                 entities.append(light_entity)
 
             # Get covers from the hub (this queries the Z-Wave network)
-            covers = await device.get_covers()
-            _LOG.info("📡 DRIVER: Found %d covers on Z-Wave network", len(covers))
+            await device.get_covers()
+            _LOG.info(
+                "📡 DRIVER: Found %d covers on Z-Wave network", len(device.covers)
+            )
 
             # Create cover entities from what the hub reports
-            for cover_info in covers:
+            for cover_info in device.covers:
                 _LOG.debug(
                     "⚡ DRIVER: Registering cover: %s (node %d)",
                     cover_info.name,

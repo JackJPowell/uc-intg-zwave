@@ -194,6 +194,7 @@ async def _handle_discovery() -> RequestUserInput | SetupError:
     """
     global _setup_step  # pylint: disable=global-statement
 
+    return _user_input_manual
     discovery = ZWaveDiscovery()
     # await discovery.scan()
     if len(discovery.found_services) > 0:

@@ -105,12 +105,12 @@ class SmartHub:
         return updated_data
 
     @property
-    def lights(self) -> list[Any]:
+    def lights(self) -> list[ZWaveLightInfo]:
         """Return the list of light entities."""
         return self._lights
 
     @property
-    def covers(self) -> list[Any]:
+    def covers(self) -> list[ZWaveCoverInfo]:
         """Return the list of cover entities."""
         return self._covers
 
@@ -309,21 +309,38 @@ class SmartHub:
 
     def _on_value_updated(self, event_info: dict) -> None:
         """Handle Z-Wave value updated events."""
-        _LOG.debug(
-            "⚡ BRIDGE [%s]: Value updated - node %d",
-            self.log_id,
-            event_info.get("node_id"),
-        )
-        node_id = event_info.get("node_id")
-        if node_id:
+        try:
+            node_id = event_info.get("node_id")
+            
+            if node_id is None:
+                _LOG.warning("⚠️  [%s] Received value update with no node_id: %s", self.log_id, event_info)
+                return
+            
+            # Validate node_id is numeric
+            if not isinstance(node_id, int):
+                _LOG.error("❌ [%s] node_id is not an integer: %s (type: %s)", 
+                          self.log_id, node_id, type(node_id).__name__)
+                return
+            
+            _LOG.debug(
+                "⚡ BRIDGE [%s]: Value updated - node %d",
+                self.log_id,
+                node_id,
+            )
+            
             # Check if it's a light or cover and update accordingly
             is_light = any(light.node_id == node_id for light in self._lights)
             is_cover = any(cover.node_id == node_id for cover in self._covers)
 
             if is_light:
                 self._update_light(node_id, event_info)
-            if is_cover:
+            elif is_cover:
                 self._update_cover(node_id, event_info)
+            else:
+                _LOG.debug("[%s] Node %d is not a known light or cover, ignoring update", self.log_id, node_id)
+                
+        except Exception as ex:  # pylint: disable=broad-exception-caught
+            _LOG.error("❌ [%s] Error handling value update: %s", self.log_id, ex, exc_info=True)
 
     def _on_node_status_changed(self, event_info: dict) -> None:
         """Handle Z-Wave node status changed events."""
@@ -344,10 +361,35 @@ class SmartHub:
 
             # Update the light's state from event_info if available
             if event_info:
-                # Extract new values from event_info
+                # Extract and validate new_value
+                new_value = event_info.get("new_value")
+                
+                # Validate that new_value is numeric (int or float)
+                if new_value is None:
+                    _LOG.warning("⚠️  [%s] new_value is None for light node_id=%s, skipping update", self.log_id, node_id)
+                    return
+                
+                if isinstance(new_value, dict):
+                    _LOG.error("❌ [%s] new_value is a dict for light node_id=%s, expected int/float. Data: %s", 
+                              self.log_id, node_id, new_value)
+                    return
+                
+                if not isinstance(new_value, (int, float)):
+                    _LOG.error("❌ [%s] new_value has invalid type %s for light node_id=%s, expected int/float. Value: %s", 
+                              self.log_id, type(new_value).__name__, node_id, new_value)
+                    return
+                
+                # Validate range (0-100 for Z-Wave)
+                if not (0 <= new_value <= 100):
+                    _LOG.warning("⚠️  [%s] Brightness value %s out of range [0-100] for light node_id=%s, clamping", 
+                               self.log_id, new_value, node_id)
+                    new_value = max(0, min(100, new_value))
+                
+                # Update light state
                 light.brightness = 0
-                if event_info.get("new_value") > 0:
-                    light.brightness = event_info.get("new_value") * 255 / 100
+                _LOG.debug("Event Info: %s", new_value)
+                if new_value > 0:
+                    light.brightness = new_value * 255 / 100
                 light.current_state = light.brightness
 
                 _LOG.debug(
@@ -571,8 +613,32 @@ class SmartHub:
 
             # Update the cover's state from event_info if available
             if event_info:
-                # Extract new values from event_info
-                cover.position = event_info.get("new_value")
+                # Extract and validate new_value
+                new_value = event_info.get("new_value")
+                
+                # Validate that new_value is numeric (int or float)
+                if new_value is None:
+                    _LOG.warning("⚠️  [%s] new_value is None for cover node_id=%s, skipping update", self.log_id, node_id)
+                    return
+                
+                if isinstance(new_value, dict):
+                    _LOG.error("❌ [%s] new_value is a dict for cover node_id=%s, expected int/float. Data: %s", 
+                              self.log_id, node_id, new_value)
+                    return
+                
+                if not isinstance(new_value, (int, float)):
+                    _LOG.error("❌ [%s] new_value has invalid type %s for cover node_id=%s, expected int/float. Value: %s", 
+                              self.log_id, type(new_value).__name__, node_id, new_value)
+                    return
+                
+                # Validate range (0-100 for position)
+                if not (0 <= new_value <= 100):
+                    _LOG.warning("⚠️  [%s] Cover position value %s out of range [0-100] for node_id=%s, clamping", 
+                               self.log_id, new_value, node_id)
+                    new_value = max(0, min(100, new_value))
+                
+                # Update cover state
+                cover.position = new_value
                 cover.current_state = cover.position
 
                 _LOG.debug(

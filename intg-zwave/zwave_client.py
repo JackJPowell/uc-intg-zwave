@@ -45,9 +45,10 @@ class ZWaveClient:
 
             # Wait for driver to be ready
             driver_ready = asyncio.Event()
+            # Start the listen task to process incoming events
             asyncio.create_task(self.client.listen(driver_ready))
 
-            await asyncio.wait_for(driver_ready.wait(), timeout=15.0)
+            await asyncio.wait_for(driver_ready.wait(), timeout=5.0)
 
             # Set up event monitoring
             if self.client.driver:
