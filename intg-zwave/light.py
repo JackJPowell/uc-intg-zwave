@@ -22,24 +22,38 @@ class ZWaveLight(Light):
 
     def __init__(
         self,
-        config_device: ZWaveConfig,
+        config: ZWaveConfig,
         light_info: ZWaveLightInfo,
         get_device: Any = None,
     ):
         """Initialize the class."""
         _LOG.debug("Z-Wave Light init")
         entity_id = create_entity_id(
-            device_id=config_device.identifier,
+            device_id=config.identifier,
             entity_id=str(light_info.node_id),
             entity_type=EntityTypes.LIGHT,
         )
-        self.config = config_device
-        self.get_device = get_device
+        self.config = config
         self.features = [
             light.Features.ON_OFF,
             light.Features.TOGGLE,
             light.Features.DIM,
         ]
+
+        self.light: ZWaveLightInfo | None = None
+
+        self.device: bridge.SmartHub | None = get_device(config.identifier)
+        if self.device:
+            self.light = next(
+                (
+                    entity
+                    for entity in self.device.lights
+                    if entity.node_id == light_info.node_id
+                ),
+                None,
+            )
+        else:
+            self.light = light_info
 
         # Check if device supports dimming based on type
         if (
@@ -82,7 +96,6 @@ class ZWaveLight(Light):
         _LOG.info(
             "Got %s command request: %s %s", entity.id, cmd_id, params if params else ""
         )
-        device: bridge.SmartHub = self.get_device(self.config.identifier)
 
         try:
             identifier = entity.id.split(".", 2)[2]
@@ -99,15 +112,15 @@ class ZWaveLight(Light):
                             )
                             return ucapi.StatusCodes.BAD_REQUEST
 
-                    res = await device.control_light(
+                    res = await self.device.control_light(
                         identifier, 99 if brightness is None else brightness
                     )
                 case light.Commands.OFF:
                     _LOG.debug("Sending OFF command to Light")
-                    res = await device.control_light(identifier, 0)
+                    res = await self.device.control_light(identifier, 0)
                 case light.Commands.TOGGLE:
                     _LOG.debug("Sending TOGGLE command to Light")
-                    res = await device.toggle_light(identifier)
+                    res = await self.device.toggle_light(identifier)
 
         except Exception as ex:  # pylint: disable=broad-except
             _LOG.error("Error executing command %s: %s", cmd_id, ex)

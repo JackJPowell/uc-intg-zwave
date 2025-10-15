@@ -38,24 +38,36 @@ class ZWaveCover(Cover):
             config.identifier, cover_info.device_id, EntityTypes.COVER
         )
         self.config = config
-        self.get_device = get_device
+        self.cover: ZWaveCoverInfo | None = None
+
+        self.device: bridge.SmartHub | None = get_device(config.identifier)
+        if self.device:
+            self.cover = next(
+                (
+                    entity
+                    for entity in self.device.covers
+                    if entity.node_id == cover_info.node_id
+                ),
+                None,
+            )
+        else:
+            self.cover = cover_info
 
         super().__init__(
             entity_id,
-            cover_info.name,
+            self.cover.name,
             features=[
                 cover.Features.OPEN,
                 cover.Features.CLOSE,
-                cover.Features.STOP,
                 cover.Features.POSITION,
             ],
             attributes={
                 cover.Attributes.STATE: "OPEN"
-                if cover_info.current_state > 50
+                if self.cover.position > 50
                 else "CLOSED",
                 cover.Attributes.POSITION: 100
-                if cover_info.position == 99
-                else cover_info.position,
+                if self.cover.position == 99
+                else self.cover.position,
             },
             device_class=cover.DeviceClasses.SHADE,
             cmd_handler=self.cover_cmd_handler,
@@ -77,24 +89,23 @@ class ZWaveCover(Cover):
         _LOG.info(
             "Got %s command request: %s %s", entity.id, cmd_id, params if params else ""
         )
-        device: bridge.SmartHub = self.get_device(self.config.identifier)
 
         try:
             match cmd_id:
                 case cover.Commands.OPEN:
-                    await device.control_cover(
+                    await self.device.control_cover(
                         cover_id=entity_from_entity_id(entity.id), position=100
                     )
                 case cover.Commands.CLOSE:
-                    await device.control_cover(
+                    await self.device.control_cover(
                         cover_id=entity_from_entity_id(entity.id), position=0
                     )
                 case cover.Commands.STOP:
-                    await device.stop_cover(cover_id=entity_from_entity_id(entity.id))
+                    return ucapi.StatusCodes.BAD_REQUEST
                 case cover.Commands.POSITION:
                     if params and "position" in params:
                         position = params["position"]
-                        await device.control_cover(
+                        await self.device.control_cover(
                             cover_id=entity_from_entity_id(entity.id),
                             position=position,
                         )

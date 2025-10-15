@@ -15,7 +15,7 @@ import config
 import setup
 import ucapi
 import ucapi.api as uc
-from ucapi import EntityTypes
+from ucapi import EntityTypes, cover
 from light import ZWaveLight
 from cover import ZWaveCover
 from config import (
@@ -149,15 +149,17 @@ async def on_subscribe_entities(entity_ids: list[str]) -> None:
                         (
                             cover
                             for cover in device.covers
-                            if cover.node_id == entity_from_entity_id(entity_id)
+                            if cover.node_id == int(entity_from_entity_id(entity_id))
                         ),
                         None,
                     )
 
                     if entity is not None:
                         update = {}
-                        update["state"] = "OPEN" if entity.position > 0 else "CLOSED"
-                        update["position"] = int(entity.position)
+                        update["state"] = "OPEN" if entity.position > 50 else "CLOSED"
+                        update["position"] = (
+                            100 if entity.position == 99 else int(entity.position)
+                        )
                         api.configured_entities.update_attributes(entity_id, update)
                 case EntityTypes.LIGHT.value:
                     entity = next(
@@ -392,9 +394,10 @@ async def _register_available_entities_from_hub(device: bridge.SmartHub) -> bool
             # Create cover entities from what the hub reports
             for cover_info in device.covers:
                 _LOG.debug(
-                    "⚡ DRIVER: Registering cover: %s (node %d)",
+                    "⚡ DRIVER: Registering cover: %s (node %d) %s",
                     cover_info.name,
                     cover_info.node_id,
+                    cover_info.position,
                 )
                 cover_entity = ZWaveCover(
                     device.device_config, cover_info, get_configured_device
@@ -408,7 +411,6 @@ async def _register_available_entities_from_hub(device: bridge.SmartHub) -> bool
                     api.available_entities.remove(entity.id)
                 _LOG.debug("⚡ DRIVER: Adding entity: %s", entity.id)
                 api.available_entities.add(entity)
-
             _LOG.info(
                 "✅ DRIVER: Successfully registered %d entities from Z-Wave hub",
                 len(entities),

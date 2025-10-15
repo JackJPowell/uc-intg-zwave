@@ -311,23 +311,31 @@ class SmartHub:
         """Handle Z-Wave value updated events."""
         try:
             node_id = event_info.get("node_id")
-            
+
             if node_id is None:
-                _LOG.warning("⚠️  [%s] Received value update with no node_id: %s", self.log_id, event_info)
+                _LOG.warning(
+                    "⚠️  [%s] Received value update with no node_id: %s",
+                    self.log_id,
+                    event_info,
+                )
                 return
-            
+
             # Validate node_id is numeric
             if not isinstance(node_id, int):
-                _LOG.error("❌ [%s] node_id is not an integer: %s (type: %s)", 
-                          self.log_id, node_id, type(node_id).__name__)
+                _LOG.error(
+                    "❌ [%s] node_id is not an integer: %s (type: %s)",
+                    self.log_id,
+                    node_id,
+                    type(node_id).__name__,
+                )
                 return
-            
+
             _LOG.debug(
                 "⚡ BRIDGE [%s]: Value updated - node %d",
                 self.log_id,
                 node_id,
             )
-            
+
             # Check if it's a light or cover and update accordingly
             is_light = any(light.node_id == node_id for light in self._lights)
             is_cover = any(cover.node_id == node_id for cover in self._covers)
@@ -337,10 +345,19 @@ class SmartHub:
             elif is_cover:
                 self._update_cover(node_id, event_info)
             else:
-                _LOG.debug("[%s] Node %d is not a known light or cover, ignoring update", self.log_id, node_id)
-                
+                _LOG.debug(
+                    "[%s] Node %d is not a known light or cover, ignoring update",
+                    self.log_id,
+                    node_id,
+                )
+
         except Exception as ex:  # pylint: disable=broad-exception-caught
-            _LOG.error("❌ [%s] Error handling value update: %s", self.log_id, ex, exc_info=True)
+            _LOG.error(
+                "❌ [%s] Error handling value update: %s",
+                self.log_id,
+                ex,
+                exc_info=True,
+            )
 
     def _on_node_status_changed(self, event_info: dict) -> None:
         """Handle Z-Wave node status changed events."""
@@ -363,28 +380,45 @@ class SmartHub:
             if event_info:
                 # Extract and validate new_value
                 new_value = event_info.get("new_value")
-                
+
                 # Validate that new_value is numeric (int or float)
                 if new_value is None:
-                    _LOG.warning("⚠️  [%s] new_value is None for light node_id=%s, skipping update", self.log_id, node_id)
+                    _LOG.warning(
+                        "⚠️  [%s] new_value is None for light node_id=%s, skipping update",
+                        self.log_id,
+                        node_id,
+                    )
                     return
-                
+
                 if isinstance(new_value, dict):
-                    _LOG.error("❌ [%s] new_value is a dict for light node_id=%s, expected int/float. Data: %s", 
-                              self.log_id, node_id, new_value)
+                    _LOG.error(
+                        "❌ [%s] new_value is a dict for light node_id=%s, expected int/float. Data: %s",
+                        self.log_id,
+                        node_id,
+                        new_value,
+                    )
                     return
-                
+
                 if not isinstance(new_value, (int, float)):
-                    _LOG.error("❌ [%s] new_value has invalid type %s for light node_id=%s, expected int/float. Value: %s", 
-                              self.log_id, type(new_value).__name__, node_id, new_value)
+                    _LOG.error(
+                        "❌ [%s] new_value has invalid type %s for light node_id=%s, expected int/float. Value: %s",
+                        self.log_id,
+                        type(new_value).__name__,
+                        node_id,
+                        new_value,
+                    )
                     return
-                
+
                 # Validate range (0-100 for Z-Wave)
                 if not (0 <= new_value <= 100):
-                    _LOG.warning("⚠️  [%s] Brightness value %s out of range [0-100] for light node_id=%s, clamping", 
-                               self.log_id, new_value, node_id)
+                    _LOG.warning(
+                        "⚠️  [%s] Brightness value %s out of range [0-100] for light node_id=%s, clamping",
+                        self.log_id,
+                        new_value,
+                        node_id,
+                    )
                     new_value = max(0, min(100, new_value))
-                
+
                 # Update light state
                 light.brightness = 0
                 _LOG.debug("Event Info: %s", new_value)
@@ -462,7 +496,7 @@ class SmartHub:
                 await self._zwave_client.set_dimmer_level(node_id, brightness)
 
             update["state"] = "ON" if brightness > 0 else "OFF"
-            update["brightness"] = 100 if brightness == 99 else brightness
+            update["brightness"] = 100 if brightness == 99 else brightness * 255 / 100
 
             self.events.emit(
                 EVENTS.UPDATE,
@@ -583,6 +617,7 @@ class SmartHub:
         try:
             node_id = int(cover_id)
             # For stop, we need to check current position and keep it
+            await self.get_covers()
             cover = next(
                 (entity for entity in self._covers if entity.node_id == node_id), None
             )
@@ -615,28 +650,45 @@ class SmartHub:
             if event_info:
                 # Extract and validate new_value
                 new_value = event_info.get("new_value")
-                
+
                 # Validate that new_value is numeric (int or float)
                 if new_value is None:
-                    _LOG.warning("⚠️  [%s] new_value is None for cover node_id=%s, skipping update", self.log_id, node_id)
+                    _LOG.warning(
+                        "⚠️  [%s] new_value is None for cover node_id=%s, skipping update",
+                        self.log_id,
+                        node_id,
+                    )
                     return
-                
+
                 if isinstance(new_value, dict):
-                    _LOG.error("❌ [%s] new_value is a dict for cover node_id=%s, expected int/float. Data: %s", 
-                              self.log_id, node_id, new_value)
+                    _LOG.error(
+                        "❌ [%s] new_value is a dict for cover node_id=%s, expected int/float. Data: %s",
+                        self.log_id,
+                        node_id,
+                        new_value,
+                    )
                     return
-                
+
                 if not isinstance(new_value, (int, float)):
-                    _LOG.error("❌ [%s] new_value has invalid type %s for cover node_id=%s, expected int/float. Value: %s", 
-                              self.log_id, type(new_value).__name__, node_id, new_value)
+                    _LOG.error(
+                        "❌ [%s] new_value has invalid type %s for cover node_id=%s, expected int/float. Value: %s",
+                        self.log_id,
+                        type(new_value).__name__,
+                        node_id,
+                        new_value,
+                    )
                     return
-                
+
                 # Validate range (0-100 for position)
                 if not (0 <= new_value <= 100):
-                    _LOG.warning("⚠️  [%s] Cover position value %s out of range [0-100] for node_id=%s, clamping", 
-                               self.log_id, new_value, node_id)
+                    _LOG.warning(
+                        "⚠️  [%s] Cover position value %s out of range [0-100] for node_id=%s, clamping",
+                        self.log_id,
+                        new_value,
+                        node_id,
+                    )
                     new_value = max(0, min(100, new_value))
-                
+
                 # Update cover state
                 cover.position = new_value
                 cover.current_state = cover.position
@@ -648,18 +700,9 @@ class SmartHub:
                     cover.position,
                 )
 
-            # Determine state based on position
-            position = cover.position
-            if position <= 5:
-                state = "CLOSED"
-            elif position >= 95:
-                state = "OPEN"
-            else:
-                state = "OPENING" if position > 50 else "CLOSING"
-
             # Prepare update event
-            update["state"] = state
-            update["position"] = position
+            update["state"] = "OPEN" if cover.position > 50 else "CLOSED"
+            update["position"] = 100 if cover.position == 99 else cover.position
 
             self.events.emit(
                 EVENTS.UPDATE,
