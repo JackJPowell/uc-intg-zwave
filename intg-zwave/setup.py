@@ -449,6 +449,10 @@ async def _handle_creation(
                 config.devices.add_or_update(device)
             finally:
                 await zwave_client.disconnect()
+                # Give the Z-Wave JS Server a moment to clean up the WebSocket connection
+                # before the driver attempts to reconnect. This prevents race conditions
+                # where the server hasn't fully released resources yet.
+                await asyncio.sleep(0.3)
 
         except Exception as ex:  # pylint: disable=broad-exception-caught
             _LOG.error(
