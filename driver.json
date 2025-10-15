@@ -1,6 +1,6 @@
 {
   "driver_id": "zwave_driver",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "min_core_api": "0.20.0",
   "name": { "en": "Z-Wave" },
   "icon": "uc:tower-broadcast",
