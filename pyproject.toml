@@ -1,11 +1,12 @@
 [project]
 name = "uc-intg-zwave"
-version = "0.1.4"
-description = "Add your description here"
+version = "1.0.0"
+description = "Zwave Integration for Unfolded Circle Remotes"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "zwave-js-server-python==0.56.0",
-    "ucapi==0.3.1",
+    "ucapi==0.4.0",
+    "ucapi-framework==1.0.3",
     "zeroconf==0.147.0",
 ]

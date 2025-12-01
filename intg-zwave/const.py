@@ -6,6 +6,20 @@ from dataclasses import dataclass
 
 
 @dataclass
+class ZWaveDevice:
+    """Z-Wave controller configuration."""
+
+    identifier: str
+    """Unique identifier of the controller."""
+    address: str
+    """WebSocket URL of Z-Wave JS Server (e.g., ws://localhost:3000)"""
+    name: str
+    """Name of the controller."""
+    model: str
+    """Model name of the controller."""
+
+
+@dataclass
 class ZWaveLightInfo:
     device_id: str
     node_id: int

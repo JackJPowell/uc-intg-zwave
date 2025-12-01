@@ -6,15 +6,15 @@ Light entity functions.
 
 import logging
 from typing import Any
+
 import ucapi
-from config import ZWaveConfig, create_entity_id
+from bridge import SmartHub
+from const import ZWaveDevice, ZWaveLightInfo
 from ucapi import EntityTypes, light
 from ucapi.light import Attributes, Light, States
-from const import ZWaveLightInfo
-import bridge
+from ucapi_framework import create_entity_id
 
 _LOG = logging.getLogger(__name__)
-_configured_devices: dict[str, bridge.SmartHub] = {}
 
 
 class ZWaveLight(Light):
@@ -22,17 +22,12 @@ class ZWaveLight(Light):
 
     def __init__(
         self,
-        config: ZWaveConfig,
+        config: ZWaveDevice,
         light_info: ZWaveLightInfo,
-        get_device: Any = None,
+        device: SmartHub,
     ):
         """Initialize the class."""
         _LOG.debug("Z-Wave Light init")
-        entity_id = create_entity_id(
-            device_id=config.identifier,
-            entity_id=str(light_info.node_id),
-            entity_type=EntityTypes.LIGHT,
-        )
         self.config = config
         self.features = [
             light.Features.ON_OFF,
@@ -42,7 +37,7 @@ class ZWaveLight(Light):
 
         self.light: ZWaveLightInfo | None = None
 
-        self.device: bridge.SmartHub | None = get_device(config.identifier)
+        self.device: SmartHub | None = device
         if self.device:
             self.light = next(
                 (
@@ -65,7 +60,11 @@ class ZWaveLight(Light):
                 self.features.remove(light.Features.DIM)
 
         super().__init__(
-            entity_id,
+            create_entity_id(
+                entity_type=EntityTypes.LIGHT,
+                device_id=config.identifier,
+                entity_id=str(light_info.node_id),
+            ),
             light_info.name,
             self.features,
             attributes={
@@ -98,7 +97,6 @@ class ZWaveLight(Light):
         )
 
         try:
-            identifier = entity.id.split(".", 2)[2]
             brightness = None
             match cmd_id:
                 case light.Commands.ON:
@@ -113,14 +111,14 @@ class ZWaveLight(Light):
                             return ucapi.StatusCodes.BAD_REQUEST
 
                     res = await self.device.control_light(
-                        identifier, 99 if brightness is None else brightness
+                        self.light.node_id, 99 if brightness is None else brightness
                     )
                 case light.Commands.OFF:
                     _LOG.debug("Sending OFF command to Light")
-                    res = await self.device.control_light(identifier, 0)
+                    res = await self.device.control_light(self.light.node_id, 0)
                 case light.Commands.TOGGLE:
                     _LOG.debug("Sending TOGGLE command to Light")
-                    res = await self.device.toggle_light(identifier)
+                    res = await self.device.toggle_light(self.light.node_id)
 
         except Exception as ex:  # pylint: disable=broad-except
             _LOG.error("Error executing command %s: %s", cmd_id, ex)
