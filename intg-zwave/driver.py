@@ -14,7 +14,7 @@ from bridge import SmartHub
 from const import ZWaveDevice
 from cover import ZWaveCover
 from light import ZWaveLight
-from setup import ZwaveSetupFlow
+from setup import ZWaveSetupFlow
 from ucapi import EntityTypes
 from ucapi.cover import Attributes as CoverAttr
 from ucapi.light import Attributes as LightAttr
@@ -23,8 +23,8 @@ from ucapi_framework import BaseDeviceManager, BaseIntegrationDriver, get_config
 _LOG = logging.getLogger("driver")
 
 
-class ZwaveIntegrationDriver(BaseIntegrationDriver[SmartHub, ZWaveDevice]):
-    """Zwave Integration Driver"""
+class ZWaveIntegrationDriver(BaseIntegrationDriver[SmartHub, ZWaveDevice]):
+    """ZWave Integration Driver"""
 
     async def refresh_entity_state(self, entity_id: str) -> None:
         """Refresh the state of a specific entity."""
@@ -152,7 +152,7 @@ async def main():
 
     loop = asyncio.get_running_loop()
 
-    driver = ZwaveIntegrationDriver(
+    driver = ZWaveIntegrationDriver(
         loop=loop,
         device_class=SmartHub,
         entity_classes=[ZWaveLight, ZWaveCover],
@@ -170,7 +170,7 @@ async def main():
     for device_config in list(driver.config.all()):
         await driver.async_add_configured_device(device_config)
 
-    setup_handler = ZwaveSetupFlow.create_handler(driver.config)
+    setup_handler = ZWaveSetupFlow.create_handler(driver.config)
 
     await driver.api.init("driver.json", setup_handler)
 

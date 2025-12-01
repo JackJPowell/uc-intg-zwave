@@ -56,16 +56,16 @@ _MANUAL_INPUT_SCHEMA = RequestUserInput(
 )
 
 
-class ZwaveSetupFlow(BaseSetupFlow[ZWaveDevice]):
+class ZWaveSetupFlow(BaseSetupFlow[ZWaveDevice]):
     """
     Setup flow for Z-Wave integration.
 
     Handles Z-Wave configuration through manual entry.
     """
 
-    def get_manual_entry_form(self) -> RequestUserInput:
+    def get_manual_entry_form(self) -> RequestUserInput | SetupError:
         """
-        Get the manual entry form for Yamaha AVR setup.
+        Get the manual entry form for Z-Wave setup.
 
         :return: RequestUserInput for manual entry
         """
