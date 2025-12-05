@@ -11,19 +11,19 @@ import logging
 import os
 
 from bridge import SmartHub
-from const import ZWaveDevice
+from const import ZWaveConfig
 from cover import ZWaveCover
 from light import ZWaveLight
 from setup import ZWaveSetupFlow
 from ucapi import EntityTypes
 from ucapi.cover import Attributes as CoverAttr
 from ucapi.light import Attributes as LightAttr
-from ucapi_framework import BaseDeviceManager, BaseIntegrationDriver, get_config_path
+from ucapi_framework import BaseConfigManager, BaseIntegrationDriver, get_config_path
 
 _LOG = logging.getLogger("driver")
 
 
-class ZWaveIntegrationDriver(BaseIntegrationDriver[SmartHub, ZWaveDevice]):
+class ZWaveIntegrationDriver(BaseIntegrationDriver[SmartHub, ZWaveConfig]):
     """ZWave Integration Driver"""
 
     async def refresh_entity_state(self, entity_id: str) -> None:
@@ -37,7 +37,8 @@ class ZWaveIntegrationDriver(BaseIntegrationDriver[SmartHub, ZWaveDevice]):
                     (
                         cover
                         for cover in device.covers
-                        if cover.node_id == int(self.entity_from_entity_id(entity_id))
+                        if cover.node_id
+                        == int(self.sub_device_from_entity_id(entity_id))
                     ),
                     None,
                 )
@@ -56,7 +57,7 @@ class ZWaveIntegrationDriver(BaseIntegrationDriver[SmartHub, ZWaveDevice]):
                     (
                         light
                         for light in device.lights
-                        if light.device_id == self.entity_from_entity_id(entity_id)
+                        if light.device_id == self.sub_device_from_entity_id(entity_id)
                     ),
                     None,
                 )
@@ -70,7 +71,7 @@ class ZWaveIntegrationDriver(BaseIntegrationDriver[SmartHub, ZWaveDevice]):
                     self.api.configured_entities.update_attributes(entity_id, update)
 
     async def async_register_available_entities(
-        self, device_config: ZWaveDevice, device: SmartHub
+        self, device_config: ZWaveConfig, device: SmartHub
     ) -> bool:
         """
         Register entities by querying the Z-Wave hub for its devices.
@@ -150,28 +151,21 @@ async def main():
     logging.getLogger("discover").setLevel(level)
     logging.getLogger("setup").setLevel(level)
 
-    loop = asyncio.get_running_loop()
-
     driver = ZWaveIntegrationDriver(
-        loop=loop,
         device_class=SmartHub,
         entity_classes=[ZWaveLight, ZWaveCover],
         require_connection_before_registry=True,
     )
     # Initialize configuration manager with device callbacks
-    driver.config = BaseDeviceManager(
+    driver.config_manager = BaseConfigManager(
         get_config_path(driver.api.config_dir_path),
         driver.on_device_added,
         driver.on_device_removed,
-        device_class=ZWaveDevice,
+        config_class=ZWaveConfig,
     )
 
-    # Connect to all configured Z-Wave controllers
-    for device_config in list(driver.config.all()):
-        await driver.async_add_configured_device(device_config)
-
-    setup_handler = ZWaveSetupFlow.create_handler(driver.config)
-
+    await driver.register_all_configured_devices()
+    setup_handler = ZWaveSetupFlow.create_handler(driver)
     await driver.api.init("driver.json", setup_handler)
 
     await asyncio.Future()

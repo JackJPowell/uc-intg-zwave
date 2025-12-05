@@ -9,7 +9,7 @@ from typing import Any
 
 import ucapi
 from bridge import SmartHub
-from const import ZWaveCoverInfo, ZWaveDevice
+from const import ZWaveCoverInfo, ZWaveConfig
 from ucapi import Cover, EntityTypes, cover
 from ucapi_framework import create_entity_id
 
@@ -21,7 +21,7 @@ class ZWaveCover(Cover):
 
     def __init__(
         self,
-        config: ZWaveDevice,
+        config: ZWaveConfig,
         cover_info: ZWaveCoverInfo,
         device: SmartHub,
     ):
@@ -47,7 +47,7 @@ class ZWaveCover(Cover):
             create_entity_id(
                 entity_type=EntityTypes.COVER,
                 device_id=config.identifier,
-                entity_id=cover_info.node_id,
+                sub_device_id=cover_info.node_id,
             ),
             self.cover.name,
             features=[

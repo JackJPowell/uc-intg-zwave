@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import Any
 
-from const import ZWaveDevice
+from const import ZWaveConfig
 from ucapi import IntegrationSetupError, RequestUserInput, SetupError
 from ucapi_framework import BaseSetupFlow
 from zwave_client import ZWaveClient
@@ -56,7 +56,7 @@ _MANUAL_INPUT_SCHEMA = RequestUserInput(
 )
 
 
-class ZWaveSetupFlow(BaseSetupFlow[ZWaveDevice]):
+class ZWaveSetupFlow(BaseSetupFlow[ZWaveConfig]):
     """
     Setup flow for Z-Wave integration.
 
@@ -73,7 +73,7 @@ class ZWaveSetupFlow(BaseSetupFlow[ZWaveDevice]):
 
     async def query_device(
         self, input_values: dict[str, Any]
-    ) -> ZWaveDevice | RequestUserInput:
+    ) -> ZWaveConfig | RequestUserInput:
         """
         Start driver setup.
 
@@ -159,7 +159,7 @@ class ZWaveSetupFlow(BaseSetupFlow[ZWaveDevice]):
                     else:
                         model = "Z-Wave JS Server"
 
-                    return ZWaveDevice(
+                    return ZWaveConfig(
                         identifier=controller_id,
                         address=ws_url,
                         name=controller_name,

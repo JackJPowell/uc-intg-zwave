@@ -7,7 +7,7 @@ import logging
 from asyncio import AbstractEventLoop
 from typing import Any
 
-from const import ZWaveCoverInfo, ZWaveDevice, ZWaveLightInfo
+from const import ZWaveCoverInfo, ZWaveConfig, ZWaveLightInfo
 from ucapi import EntityTypes
 from ucapi.cover import Attributes as CoverAttr
 from ucapi.light import Attributes as LightAttr
@@ -23,7 +23,7 @@ class SmartHub(ExternalClientDevice):
 
     def __init__(
         self,
-        config: ZWaveDevice,
+        config: ZWaveConfig,
         loop: AbstractEventLoop | None = None,
         config_manager=None,
         watchdog_interval: int = 30,
@@ -73,7 +73,7 @@ class SmartHub(ExternalClientDevice):
     # ─────────────────────────────────────────────────────────────────
 
     @property
-    def device_config(self) -> ZWaveDevice:
+    def device_config(self) -> ZWaveConfig:
         """Return the device configuration."""
         return self._device_config
 
@@ -376,13 +376,13 @@ class SmartHub(ExternalClientDevice):
                 (
                     light_entity
                     for light_entity in self._lights
-                    if str(light_entity.node_id) == light_id
+                    if light_entity.node_id == light_id
                 ),
                 None,
             )
             if light:
                 is_on = light.current_state > 0
-                node_id = int(light_id)
+                node_id = light.node_id
                 if is_on:
                     await self._client.turn_off(node_id)
                 else:

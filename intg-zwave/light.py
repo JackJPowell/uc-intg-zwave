@@ -9,7 +9,7 @@ from typing import Any
 
 import ucapi
 from bridge import SmartHub
-from const import ZWaveDevice, ZWaveLightInfo
+from const import ZWaveConfig, ZWaveLightInfo
 from ucapi import EntityTypes, light
 from ucapi.light import Attributes, Light, States
 from ucapi_framework import create_entity_id
@@ -22,7 +22,7 @@ class ZWaveLight(Light):
 
     def __init__(
         self,
-        config: ZWaveDevice,
+        config: ZWaveConfig,
         light_info: ZWaveLightInfo,
         device: SmartHub,
     ):
@@ -63,7 +63,7 @@ class ZWaveLight(Light):
             create_entity_id(
                 entity_type=EntityTypes.LIGHT,
                 device_id=config.identifier,
-                entity_id=str(light_info.node_id),
+                sub_device_id=str(light_info.node_id),
             ),
             light_info.name,
             self.features,

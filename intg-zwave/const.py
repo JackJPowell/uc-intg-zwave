@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class ZWaveDevice:
+class ZWaveConfig:
     """Z-Wave controller configuration."""
 
     identifier: str
