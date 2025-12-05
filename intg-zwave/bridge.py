@@ -3,106 +3,91 @@ This module implements the Z-Wave communication of the Remote Two/3 integration 
 
 """
 
-import asyncio
 import logging
 from asyncio import AbstractEventLoop
-from enum import StrEnum, IntEnum
-from typing import Any, ParamSpec, TypeVar
+from typing import Any
 
-from zwave_client import ZWaveClient
-from pyee.asyncio import AsyncIOEventEmitter
-from ucapi.media_player import Attributes as MediaAttr
+from const import ZWaveCoverInfo, ZWaveConfig, ZWaveLightInfo
 from ucapi import EntityTypes
-from config import ZWaveConfig, create_entity_id
-from const import ZWaveLightInfo, ZWaveCoverInfo
+from ucapi.cover import Attributes as CoverAttr
+from ucapi.light import Attributes as LightAttr
+from ucapi.media_player import Attributes as MediaAttr
+from ucapi_framework import DeviceEvents, ExternalClientDevice, create_entity_id
+from zwave_client import ZWaveClient
 
 _LOG = logging.getLogger(__name__)
 
 
-class EVENTS(IntEnum):
-    """Internal driver events."""
-
-    CONNECTING = 0
-    CONNECTED = 1
-    DISCONNECTED = 2
-    PAIRED = 3
-    ERROR = 4
-    UPDATE = 5
-
-
-_ZWaveDeviceT = TypeVar("_ZWaveDeviceT", bound="ZWaveConfig")
-_P = ParamSpec("_P")
-
-
-class PowerState(StrEnum):
-    """Playback state for companion protocol."""
-
-    OFF = "OFF"
-    ON = "ON"
-    STANDBY = "STANDBY"
-
-
-class SmartHub:
+class SmartHub(ExternalClientDevice):
     """Representing a Z-Wave Controller."""
 
     def __init__(
-        self, config: ZWaveConfig, loop: AbstractEventLoop | None = None
+        self,
+        config: ZWaveConfig,
+        loop: AbstractEventLoop | None = None,
+        config_manager=None,
+        watchdog_interval: int = 30,
+        reconnect_delay: int = 5,
+        max_reconnect_attempts: int = 3,
     ) -> None:
         """Create instance."""
-        self._loop: AbstractEventLoop = loop or asyncio.get_running_loop()
-        self.events = AsyncIOEventEmitter(self._loop)
-        self._is_connected: bool = False
-        self._config: ZWaveConfig | None = config
-        self._zwave_client: ZWaveClient = ZWaveClient(self._config.address)
-        self._connection_attempts: int = 0
-        self._state: PowerState = PowerState.OFF
-        self._features: dict = {}
-        self._lights: list = [ZWaveLightInfo]
-        self._covers: list = [ZWaveCoverInfo]
-        self._watchdog_task: asyncio.Task | None = None
-        self._watchdog_running: bool = False
-        self._reconnect_delay: int = 5  # seconds between reconnection attempts
-        self._watchdog_interval: int = 30  # seconds between connection checks
+        super().__init__(
+            device_config=config,
+            loop=loop,
+            config_manager=config_manager,
+            watchdog_interval=watchdog_interval,
+            reconnect_delay=reconnect_delay,
+            max_reconnect_attempts=max_reconnect_attempts,
+        )
+        self._lights: list[ZWaveLightInfo] = []
+        self._covers: list[ZWaveCoverInfo] = []
 
-    @property
-    def device_config(self) -> ZWaveConfig:
-        """Return the device configuration."""
-        return self._config
+    # ─────────────────────────────────────────────────────────────────
+    # Properties (required by BaseDeviceInterface)
+    # ─────────────────────────────────────────────────────────────────
 
     @property
     def identifier(self) -> str:
         """Return the device identifier."""
-        if not self._config.identifier:
+        if not self._device_config.identifier:
             raise ValueError("Instance not initialized, no identifier available")
-        return self._config.identifier
+        return self._device_config.identifier
 
     @property
     def log_id(self) -> str:
         """Return a log identifier."""
-        return self.device_config.identifier
+        return self._device_config.identifier
 
     @property
     def name(self) -> str:
         """Return the device name."""
-        return self.device_config.name
+        return self._device_config.name
 
     @property
     def address(self) -> str | None:
         """Return the optional device address."""
-        return self.device_config.address
+        return self._device_config.address
+
+    # ─────────────────────────────────────────────────────────────────
+    # Additional Properties
+    # ─────────────────────────────────────────────────────────────────
 
     @property
-    def state(self) -> PowerState | None:
+    def device_config(self) -> ZWaveConfig:
+        """Return the device configuration."""
+        return self._device_config
+
+    @property
+    def state(self) -> str:
         """Return the device state."""
-        return "ON" if self._is_connected else "OFF"
+        return "ON" if self.is_connected else "OFF"
 
     @property
-    def attributes(self) -> dict[str, any]:
+    def attributes(self) -> dict[str, Any]:
         """Return the device attributes."""
-        updated_data = {
+        return {
             MediaAttr.STATE: self.state,
         }
-        return updated_data
 
     @property
     def lights(self) -> list[ZWaveLightInfo]:
@@ -114,198 +99,51 @@ class SmartHub:
         """Return the list of cover entities."""
         return self._covers
 
-    @property
-    def is_connected(self) -> bool:
-        """Return if the device is connected."""
-        return self._is_connected
+    # ─────────────────────────────────────────────────────────────────
+    # ExternalClientDevice Implementation
+    # ─────────────────────────────────────────────────────────────────
 
-    def get_controller_info(self) -> dict[str, Any]:
-        """Get information about the Z-Wave controller.
+    async def create_client(self) -> ZWaveClient:
+        """Create the Z-Wave client instance."""
+        return ZWaveClient(self._device_config.address)
 
-        Returns dictionary with home_id, sdk_version, library_version, etc.
-        """
-        if not self._zwave_client or not self._zwave_client.connected:
-            return {}
+    async def connect_client(self) -> None:
+        """Connect the Z-Wave client and set up event handlers."""
+        success = await self._client.connect()
+        if not success:
+            raise ConnectionError("Failed to connect to Z-Wave controller")
 
-        return self._zwave_client.get_controller_info()
+        # Set up event handlers
+        self._setup_event_handlers()
+        _LOG.info("🏠 BRIDGE [%s]: Connected to Z-Wave controller", self.log_id)
 
-    async def connect(self) -> bool:
-        """Establish connection to the Z-Wave controller."""
-        if self._zwave_client.connected:
-            return True
-
-        await self.disconnect()
-        _LOG.debug("[%s] Connecting to Z-Wave controller", self.log_id)
-        self.events.emit(EVENTS.CONNECTING, self.device_config.identifier)
-
-        try:
-            success = await self._zwave_client.connect()
-            if not success:
-                return False
-
-            self._is_connected = True
-            self._state = PowerState.ON
-            _LOG.info("🏠 BRIDGE [%s]: Connected to Z-Wave controller", self.log_id)
-
-            # Set up event handlers
-            self._setup_event_handlers()
-
-            # Start the connection watchdog
-            self._start_watchdog()
-
-        except asyncio.CancelledError as err:
-            _LOG.error("[%s] Connection cancelled: %s", self.log_id, err)
-            return False
-        except Exception as err:  # pylint: disable=broad-exception-caught
-            _LOG.error("[%s] Could not connect: %s", self.log_id, err)
-            return False
-        finally:
-            _LOG.debug("[%s] Connect setup finished", self.log_id)
-
-        self.events.emit(EVENTS.CONNECTED, self.device_config.identifier)
-        _LOG.debug("[%s] Connected", self.log_id)
-
-        return True
-
-    async def disconnect(self) -> None:
-        """Disconnect from the Z-Wave controller."""
-        _LOG.debug("[%s] Disconnecting from Z-Wave controller", self.log_id)
-
-        # Remove event handlers before disconnecting
+    async def disconnect_client(self) -> None:
+        """Disconnect the Z-Wave client and remove event handlers."""
         self._remove_event_handlers()
+        await self._client.disconnect()
 
-        await self._zwave_client.disconnect()
-        self._is_connected = False
-        self._state = PowerState.OFF
-        self.events.emit(EVENTS.DISCONNECTED, self.device_config.identifier)
+    def check_client_connected(self) -> bool:
+        """Check if the Z-Wave client is connected."""
+        return self._client is not None and self._client.connected
+
+    # ─────────────────────────────────────────────────────────────────
+    # Event Handlers
+    # ─────────────────────────────────────────────────────────────────
 
     def _setup_event_handlers(self) -> None:
         """Set up event handlers for Z-Wave events."""
-        self._zwave_client.add_event_handler("value_updated", self._on_value_updated)
-        self._zwave_client.add_event_handler(
+        self._client.add_event_handler("value_updated", self._on_value_updated)
+        self._client.add_event_handler(
             "node_status_changed", self._on_node_status_changed
         )
 
     def _remove_event_handlers(self) -> None:
         """Remove event handlers for Z-Wave events."""
-        self._zwave_client.remove_event_handler("value_updated", self._on_value_updated)
-        self._zwave_client.remove_event_handler(
-            "node_status_changed", self._on_node_status_changed
-        )
-
-    def _start_watchdog(self) -> None:
-        """Start the connection watchdog."""
-        if not self._watchdog_running:
-            _LOG.debug("[%s] Starting connection watchdog", self.log_id)
-            self._watchdog_running = True
-            self._watchdog_task = self._loop.create_task(self._watchdog_loop())
-
-    async def _stop_watchdog(self) -> None:
-        """Stop the connection watchdog."""
-        if self._watchdog_running:
-            _LOG.debug("[%s] Stopping connection watchdog", self.log_id)
-            self._watchdog_running = False
-            if self._watchdog_task and not self._watchdog_task.done():
-                self._watchdog_task.cancel()
-                try:
-                    await self._watchdog_task
-                except asyncio.CancelledError:
-                    pass
-            self._watchdog_task = None
-
-    async def _watchdog_loop(self) -> None:
-        """Watchdog loop that monitors connection and reconnects if needed."""
-        _LOG.info(
-            "[%s] Connection watchdog started (check interval: %ds)",
-            self.log_id,
-            self._watchdog_interval,
-        )
-
-        while self._watchdog_running:
-            try:
-                await asyncio.sleep(self._watchdog_interval)
-
-                # Check if we should be connected but aren't
-                if not self._zwave_client.connected:
-                    _LOG.warning(
-                        "[%s] Connection lost, attempting to reconnect...", self.log_id
-                    )
-                    self._is_connected = False
-                    self._state = PowerState.OFF
-                    self.events.emit(EVENTS.DISCONNECTED, self.device_config.identifier)
-
-                    # Try to reconnect
-                    reconnect_success = await self._reconnect()
-
-                    if reconnect_success:
-                        _LOG.info("[%s] Reconnection successful", self.log_id)
-                        self.events.emit(
-                            EVENTS.CONNECTED, self.device_config.identifier
-                        )
-                    else:
-                        _LOG.error(
-                            "[%s] Reconnection failed, will retry in %ds",
-                            self.log_id,
-                            self._watchdog_interval,
-                        )
-                else:
-                    _LOG.debug("[%s] Connection check: OK", self.log_id)
-
-            except asyncio.CancelledError:
-                _LOG.debug("[%s] Watchdog loop cancelled", self.log_id)
-                break
-            except Exception as err:  # pylint: disable=broad-exception-caught
-                _LOG.error("[%s] Error in watchdog loop: %s", self.log_id, err)
-                await asyncio.sleep(self._reconnect_delay)
-
-    async def _reconnect(self) -> bool:
-        """Attempt to reconnect to the Z-Wave controller."""
-        max_attempts = 3
-
-        for attempt in range(1, max_attempts + 1):
-            try:
-                _LOG.info(
-                    "[%s] Reconnection attempt %d/%d",
-                    self.log_id,
-                    attempt,
-                    max_attempts,
-                )
-
-                # Disconnect first to clean up
-                try:
-                    await self._zwave_client.disconnect()
-                except Exception:  # pylint: disable=broad-exception-caught
-                    pass
-
-                # Wait before reconnecting
-                await asyncio.sleep(self._reconnect_delay)
-
-                # Try to connect
-                success = await self._zwave_client.connect()
-
-                if success:
-                    self._is_connected = True
-                    self._state = PowerState.ON
-                    _LOG.info("[%s] Reconnected to Z-Wave controller", self.log_id)
-
-                    # Re-setup event handlers
-                    self._setup_event_handlers()
-
-                    return True
-                else:
-                    _LOG.warning(
-                        "[%s] Reconnection attempt %d failed", self.log_id, attempt
-                    )
-
-            except Exception as err:  # pylint: disable=broad-exception-caught
-                _LOG.error(
-                    "[%s] Reconnection attempt %d error: %s", self.log_id, attempt, err
-                )
-
-            if attempt < max_attempts:
-                await asyncio.sleep(self._reconnect_delay)
-
-        return False
+        if self._client:
+            self._client.remove_event_handler("value_updated", self._on_value_updated)
+            self._client.remove_event_handler(
+                "node_status_changed", self._on_node_status_changed
+            )
 
     def _on_value_updated(self, event_info: dict) -> None:
         """Handle Z-Wave value updated events."""
@@ -363,6 +201,24 @@ class SmartHub:
         """Handle Z-Wave node status changed events."""
         _LOG.debug("[%s] Node status changed: %s", self.log_id, event_info)
 
+    # ─────────────────────────────────────────────────────────────────
+    # Controller Info
+    # ─────────────────────────────────────────────────────────────────
+
+    def get_controller_info(self) -> dict[str, Any]:
+        """Get information about the Z-Wave controller.
+
+        Returns dictionary with home_id, sdk_version, library_version, etc.
+        """
+        if not self._client or not self._client.connected:
+            return {}
+
+        return self._client.get_controller_info()
+
+    # ─────────────────────────────────────────────────────────────────
+    # Light Operations
+    # ─────────────────────────────────────────────────────────────────
+
     def _update_light(self, node_id: int, event_info: dict = None) -> None:
         """Update light state in cache and emit update event."""
         update = {}
@@ -391,7 +247,7 @@ class SmartHub:
                     return
 
                 if isinstance(new_value, dict):
-                    _LOG.error(
+                    _LOG.debug(
                         "❌ [%s] new_value is a dict for light node_id=%s, expected int/float. Data: %s",
                         self.log_id,
                         node_id,
@@ -435,15 +291,15 @@ class SmartHub:
                 )
 
             # Prepare update event
-            update["state"] = "ON" if light.current_state > 0 else "OFF"
-            update["brightness"] = light.brightness
+            update[LightAttr.STATE] = "ON" if light.current_state > 0 else "OFF"
+            update[LightAttr.BRIGHTNESS] = light.brightness
 
             self.events.emit(
-                EVENTS.UPDATE,
+                DeviceEvents.UPDATE,
                 create_entity_id(
-                    self.device_config.identifier,
-                    str(light.node_id),
                     EntityTypes.LIGHT,
+                    self._device_config.identifier,
+                    str(light.node_id),
                 ),
                 update,
             )
@@ -453,10 +309,10 @@ class SmartHub:
 
     async def get_lights(self) -> list[Any]:
         """Return the list of light entities from Z-Wave network."""
-        if not self._zwave_client or not self._zwave_client.connected:
+        if not self._client or not self._client.connected:
             await self.connect()
 
-        devices = self._zwave_client.get_devices()
+        devices = self._client.get_devices()
         light_list = []
 
         for node_id, device_info in devices.items():
@@ -489,21 +345,23 @@ class SmartHub:
         try:
             node_id = int(light_id)
             if brightness == 0:
-                await self._zwave_client.turn_off(node_id)
+                await self._client.turn_off(node_id)
             elif brightness == 99:
-                await self._zwave_client.turn_on(node_id)
+                await self._client.turn_on(node_id)
             else:
-                await self._zwave_client.set_dimmer_level(node_id, brightness)
+                await self._client.set_dimmer_level(node_id, brightness)
 
-            update["state"] = "ON" if brightness > 0 else "OFF"
-            update["brightness"] = 100 if brightness == 99 else brightness * 255 / 100
+            update[LightAttr.STATE] = "ON" if brightness > 0 else "OFF"
+            update[LightAttr.BRIGHTNESS] = (
+                100 if brightness == 99 else brightness * 255 / 100
+            )
 
             self.events.emit(
-                EVENTS.UPDATE,
+                DeviceEvents.UPDATE,
                 create_entity_id(
-                    self._config.identifier,
-                    light_id,
                     EntityTypes.LIGHT,
+                    self._device_config.identifier,
+                    light_id,
                 ),
                 update,
             )
@@ -518,120 +376,35 @@ class SmartHub:
                 (
                     light_entity
                     for light_entity in self._lights
-                    if str(light_entity.node_id) == light_id
+                    if light_entity.node_id == light_id
                 ),
                 None,
             )
             if light:
                 is_on = light.current_state > 0
-                node_id = int(light_id)
+                node_id = light.node_id
                 if is_on:
-                    await self._zwave_client.turn_off(node_id)
+                    await self._client.turn_off(node_id)
                 else:
-                    await self._zwave_client.turn_on(node_id)
+                    await self._client.turn_on(node_id)
                 self.events.emit(
-                    EVENTS.UPDATE,
+                    DeviceEvents.UPDATE,
                     create_entity_id(
-                        self._config.identifier,
-                        light_id,
                         EntityTypes.LIGHT,
+                        self._device_config.identifier,
+                        light_id,
                     ),
                     {
-                        "state": "OFF" if is_on else "ON",
-                        "brightness": 0 if is_on else 255,
+                        LightAttr.STATE: "OFF" if is_on else "ON",
+                        LightAttr.BRIGHTNESS: 0 if is_on else 255,
                     },
                 )
         except Exception as err:  # pylint: disable=broad-exception-caught
             _LOG.error("[%s] Error toggling light %s: %s", self.log_id, light_id, err)
 
-    async def get_covers(self) -> list[Any]:
-        """Return the list of cover entities from Z-Wave network."""
-        if not self._zwave_client or not self._zwave_client.connected:
-            await self.connect()
-
-        devices = self._zwave_client.get_devices()
-        cover_list = []
-
-        for node_id, device_info in devices.items():
-            # Check if device is a cover/shade/blind (this is a simplified check)
-            device_type = device_info.get("device_type", "").lower()
-            if (
-                "cover" in device_type
-                or "blind" in device_type
-                or "shade" in device_type
-                or "curtain" in device_type
-                or "window covering" in device_type
-                or "motor control" in device_type
-            ):
-                cover_list.append(
-                    ZWaveCoverInfo(
-                        device_id=str(node_id),
-                        node_id=node_id,
-                        current_state=device_info.get("current_value", 0),
-                        position=device_info.get("current_value", 0),
-                        type=device_type,
-                        name=device_info.get("name", f"Node {node_id}"),
-                        model=device_info.get("device_type", "Unknown"),
-                    )
-                )
-
-        # Update internal covers list
-        self._covers = cover_list
-        return cover_list
-
-    async def control_cover(self, cover_id: str, position: int) -> None:
-        """Control a cover to a specific position (0-100)."""
-        update = {}
-        try:
-            node_id = int(cover_id)
-            # Position: 0 = closed, 100 = open
-            await self._zwave_client.set_dimmer_level(node_id, position)
-
-            # Determine state based on position
-            if position <= 5:
-                state = "CLOSED"
-            elif position >= 95:
-                state = "OPEN"
-            else:
-                state = "OPENING" if position > 50 else "CLOSING"
-
-            update["state"] = state
-            update["position"] = position
-
-            self.events.emit(
-                EVENTS.UPDATE,
-                create_entity_id(
-                    self._config.identifier,
-                    cover_id,
-                    EntityTypes.COVER,
-                ),
-                update,
-            )
-        except Exception as err:  # pylint: disable=broad-exception-caught
-            _LOG.error(
-                "[%s] Error controlling cover %s: %s", self.log_id, cover_id, err
-            )
-
-    async def stop_cover(self, cover_id: str) -> None:
-        """Stop a cover at its current position."""
-        try:
-            node_id = int(cover_id)
-            # For stop, we need to check current position and keep it
-            await self.get_covers()
-            cover = next(
-                (entity for entity in self._covers if entity.node_id == node_id), None
-            )
-            if cover:
-                # Send the current position to stop movement
-                await self._zwave_client.set_dimmer_level(node_id, cover.position)
-                _LOG.debug(
-                    "[%s] Stopped cover %s at position %s",
-                    self.log_id,
-                    cover_id,
-                    cover.position,
-                )
-        except Exception as err:  # pylint: disable=broad-exception-caught
-            _LOG.error("[%s] Error stopping cover %s: %s", self.log_id, cover_id, err)
+    # ─────────────────────────────────────────────────────────────────
+    # Cover Operations
+    # ─────────────────────────────────────────────────────────────────
 
     def _update_cover(self, node_id: int, event_info: dict = None) -> None:
         """Update cover state in cache and emit update event."""
@@ -701,18 +474,107 @@ class SmartHub:
                 )
 
             # Prepare update event
-            update["state"] = "OPEN" if cover.position > 50 else "CLOSED"
-            update["position"] = 100 if cover.position == 99 else cover.position
+            update[CoverAttr.STATE] = "OPEN" if cover.position > 50 else "CLOSED"
+            update[CoverAttr.POSITION] = 100 if cover.position == 99 else cover.position
 
             self.events.emit(
-                EVENTS.UPDATE,
+                DeviceEvents.UPDATE,
                 create_entity_id(
-                    self.device_config.identifier,
-                    str(cover.node_id),
                     EntityTypes.COVER,
+                    self._device_config.identifier,
+                    str(cover.node_id),
                 ),
                 update,
             )
 
         except Exception:  # pylint: disable=broad-exception-caught
             _LOG.exception("[%s] Cover update: protocol error", self.log_id)
+
+    async def get_covers(self) -> list[Any]:
+        """Return the list of cover entities from Z-Wave network."""
+        if not self._client or not self._client.connected:
+            await self.connect()
+
+        devices = self._client.get_devices()
+        cover_list = []
+
+        for node_id, device_info in devices.items():
+            # Check if device is a cover/shade/blind (this is a simplified check)
+            device_type = device_info.get("device_type", "").lower()
+            if (
+                "cover" in device_type
+                or "blind" in device_type
+                or "shade" in device_type
+                or "curtain" in device_type
+                or "window covering" in device_type
+                or "motor control" in device_type
+            ):
+                cover_list.append(
+                    ZWaveCoverInfo(
+                        device_id=str(node_id),
+                        node_id=node_id,
+                        current_state=device_info.get("current_value", 0),
+                        position=device_info.get("current_value", 0),
+                        type=device_type,
+                        name=device_info.get("name", f"Node {node_id}"),
+                        model=device_info.get("device_type", "Unknown"),
+                    )
+                )
+
+        # Update internal covers list
+        self._covers = cover_list
+        return cover_list
+
+    async def control_cover(self, cover_id: str, position: int) -> None:
+        """Control a cover to a specific position (0-100)."""
+        update = {}
+        try:
+            node_id = int(cover_id)
+            # Position: 0 = closed, 100 = open
+            await self._client.set_dimmer_level(node_id, position)
+
+            # Determine state based on position
+            if position <= 5:
+                state = "CLOSED"
+            elif position >= 95:
+                state = "OPEN"
+            else:
+                state = "OPENING" if position > 50 else "CLOSING"
+
+            update[CoverAttr.STATE] = state
+            update[CoverAttr.POSITION] = position
+
+            self.events.emit(
+                DeviceEvents.UPDATE,
+                create_entity_id(
+                    EntityTypes.COVER,
+                    self._device_config.identifier,
+                    cover_id,
+                ),
+                update,
+            )
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            _LOG.error(
+                "[%s] Error controlling cover %s: %s", self.log_id, cover_id, err
+            )
+
+    async def stop_cover(self, cover_id: str) -> None:
+        """Stop a cover at its current position."""
+        try:
+            node_id = int(cover_id)
+            # For stop, we need to check current position and keep it
+            await self.get_covers()
+            cover = next(
+                (entity for entity in self._covers if entity.node_id == node_id), None
+            )
+            if cover:
+                # Send the current position to stop movement
+                await self._client.set_dimmer_level(node_id, cover.position)
+                _LOG.debug(
+                    "[%s] Stopped cover %s at position %s",
+                    self.log_id,
+                    cover_id,
+                    cover.position,
+                )
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            _LOG.error("[%s] Error stopping cover %s: %s", self.log_id, cover_id, err)

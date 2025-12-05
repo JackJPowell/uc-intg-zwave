@@ -6,21 +6,14 @@ Cover entity functions.
 
 import logging
 from typing import Any
-import asyncio
+
 import ucapi
-import ucapi.api as uc
-
-import bridge
-from config import ZWaveConfig, create_entity_id, entity_from_entity_id
-from ucapi import Cover, cover, EntityTypes
-from const import ZWaveCoverInfo
-
-_LOOP = asyncio.new_event_loop()
-asyncio.set_event_loop(_LOOP)
+from bridge import SmartHub
+from const import ZWaveCoverInfo, ZWaveConfig
+from ucapi import Cover, EntityTypes, cover
+from ucapi_framework import create_entity_id
 
 _LOG = logging.getLogger(__name__)
-api = uc.IntegrationAPI(_LOOP)
-_configured_devices: dict[str, bridge.SmartHub] = {}
 
 
 class ZWaveCover(Cover):
@@ -30,17 +23,14 @@ class ZWaveCover(Cover):
         self,
         config: ZWaveConfig,
         cover_info: ZWaveCoverInfo,
-        get_device: Any = None,
+        device: SmartHub,
     ):
         """Initialize the class."""
         _LOG.debug("Z-Wave Cover init")
-        entity_id = create_entity_id(
-            config.identifier, cover_info.device_id, EntityTypes.COVER
-        )
         self.config = config
         self.cover: ZWaveCoverInfo | None = None
 
-        self.device: bridge.SmartHub | None = get_device(config.identifier)
+        self.device: SmartHub | None = device
         if self.device:
             self.cover = next(
                 (
@@ -54,7 +44,11 @@ class ZWaveCover(Cover):
             self.cover = cover_info
 
         super().__init__(
-            entity_id,
+            create_entity_id(
+                entity_type=EntityTypes.COVER,
+                device_id=config.identifier,
+                sub_device_id=cover_info.node_id,
+            ),
             self.cover.name,
             features=[
                 cover.Features.OPEN,
@@ -94,11 +88,11 @@ class ZWaveCover(Cover):
             match cmd_id:
                 case cover.Commands.OPEN:
                     await self.device.control_cover(
-                        cover_id=entity_from_entity_id(entity.id), position=100
+                        cover_id=self.cover.node_id, position=100
                     )
                 case cover.Commands.CLOSE:
                     await self.device.control_cover(
-                        cover_id=entity_from_entity_id(entity.id), position=0
+                        cover_id=self.cover.node_id, position=0
                     )
                 case cover.Commands.STOP:
                     return ucapi.StatusCodes.BAD_REQUEST
@@ -106,7 +100,7 @@ class ZWaveCover(Cover):
                     if params and "position" in params:
                         position = params["position"]
                         await self.device.control_cover(
-                            cover_id=entity_from_entity_id(entity.id),
+                            cover_id=self.cover.node_id,
                             position=position,
                         )
         except Exception as ex:  # pylint: disable=broad-except
