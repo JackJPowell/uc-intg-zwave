@@ -12,12 +12,12 @@ from bridge import SmartHub
 from const import ZWaveConfig, ZWaveLightInfo
 from ucapi import EntityTypes, light
 from ucapi.light import Attributes, Light, States
-from ucapi_framework import create_entity_id
+from ucapi_framework import create_entity_id, Entity
 
 _LOG = logging.getLogger(__name__)
 
 
-class ZWaveLight(Light):
+class ZWaveLight(Light, Entity):
     """Representation of a Z-Wave Light entity."""
 
     def __init__(
@@ -68,19 +68,19 @@ class ZWaveLight(Light):
             light_info.name,
             self.features,
             attributes={
-                Attributes.STATE: States.ON
-                if light_info.brightness > 0
-                else States.OFF,
-                Attributes.BRIGHTNESS: "100"
-                if light_info.brightness == 99
-                else str(light_info.brightness),
+                Attributes.STATE: States.OFF,
+                Attributes.BRIGHTNESS: 0,
             },
             cmd_handler=self.cmd_handler,
         )
 
     # pylint: disable=too-many-statements
     async def cmd_handler(
-        self, entity: Light, cmd_id: str, params: dict[str, Any] | None
+        self,
+        entity: Light,
+        cmd_id: str,
+        params: dict[str, Any] | None,
+        _: Any | None = None,
     ) -> ucapi.StatusCodes:
         """
         Z-Wave light entity command handler.
@@ -110,18 +110,21 @@ class ZWaveLight(Light):
                             )
                             return ucapi.StatusCodes.BAD_REQUEST
 
-                    res = await self.device.control_light(
+                    await self.device.control_light(
                         self.light.node_id, 99 if brightness is None else brightness
                     )
                 case light.Commands.OFF:
                     _LOG.debug("Sending OFF command to Light")
-                    res = await self.device.control_light(self.light.node_id, 0)
+                    await self.device.control_light(self.light.node_id, 0)
                 case light.Commands.TOGGLE:
                     _LOG.debug("Sending TOGGLE command to Light")
-                    res = await self.device.toggle_light(self.light.node_id)
+                    await self.device.toggle_light(self.light.node_id)
+
+            # Get updated attributes from device and update entity
+            if entity.id in self.device.light_attributes:
+                self.update(self.device.get_device_attributes(entity.id))
 
         except Exception as ex:  # pylint: disable=broad-except
             _LOG.error("Error executing command %s: %s", cmd_id, ex)
             return ucapi.StatusCodes.BAD_REQUEST
-        _LOG.debug("Command %s executed successfully: %s", cmd_id, res)
         return ucapi.StatusCodes.OK

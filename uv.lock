@@ -484,6 +484,21 @@ wheels = [
 ]
 
 [[package]]
+name = "protobuf"
+version = "6.33.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/53/b8/cda15d9d46d03d4aa3a67cb6bffe05173440ccf86a9541afaf7ac59a1b6b/protobuf-6.33.4.tar.gz", hash = "sha256:dc2e61bca3b10470c1912d166fe0af67bfc20eb55971dcef8dfa48ce14f0ed91", size = 444346, upload-time = "2026-01-12T18:33:40.109Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e0/be/24ef9f3095bacdf95b458543334d0c4908ccdaee5130420bf064492c325f/protobuf-6.33.4-cp310-abi3-win32.whl", hash = "sha256:918966612c8232fc6c24c78e1cd89784307f5814ad7506c308ee3cf86662850d", size = 425612, upload-time = "2026-01-12T18:33:29.656Z" },
+    { url = "https://files.pythonhosted.org/packages/31/ad/e5693e1974a28869e7cd244302911955c1cebc0161eb32dfa2b25b6e96f0/protobuf-6.33.4-cp310-abi3-win_amd64.whl", hash = "sha256:8f11ffae31ec67fc2554c2ef891dcb561dae9a2a3ed941f9e134c2db06657dbc", size = 436962, upload-time = "2026-01-12T18:33:31.345Z" },
+    { url = "https://files.pythonhosted.org/packages/66/15/6ee23553b6bfd82670207ead921f4d8ef14c107e5e11443b04caeb5ab5ec/protobuf-6.33.4-cp39-abi3-macosx_10_9_universal2.whl", hash = "sha256:2fe67f6c014c84f655ee06f6f66213f9254b3a8b6bda6cda0ccd4232c73c06f0", size = 427612, upload-time = "2026-01-12T18:33:32.646Z" },
+    { url = "https://files.pythonhosted.org/packages/2b/48/d301907ce6d0db75f959ca74f44b475a9caa8fcba102d098d3c3dd0f2d3f/protobuf-6.33.4-cp39-abi3-manylinux2014_aarch64.whl", hash = "sha256:757c978f82e74d75cba88eddec479df9b99a42b31193313b75e492c06a51764e", size = 324484, upload-time = "2026-01-12T18:33:33.789Z" },
+    { url = "https://files.pythonhosted.org/packages/92/1c/e53078d3f7fe710572ab2dcffd993e1e3b438ae71cfc031b71bae44fcb2d/protobuf-6.33.4-cp39-abi3-manylinux2014_s390x.whl", hash = "sha256:c7c64f259c618f0bef7bee042075e390debbf9682334be2b67408ec7c1c09ee6", size = 339256, upload-time = "2026-01-12T18:33:35.231Z" },
+    { url = "https://files.pythonhosted.org/packages/e8/8e/971c0edd084914f7ee7c23aa70ba89e8903918adca179319ee94403701d5/protobuf-6.33.4-cp39-abi3-manylinux2014_x86_64.whl", hash = "sha256:3df850c2f8db9934de4cf8f9152f8dc2558f49f298f37f90c517e8e5c84c30e9", size = 323311, upload-time = "2026-01-12T18:33:36.305Z" },
+    { url = "https://files.pythonhosted.org/packages/75/b1/1dc83c2c661b4c62d56cc081706ee33a4fc2835bd90f965baa2663ef7676/protobuf-6.33.4-py3-none-any.whl", hash = "sha256:1fe3730068fcf2e595816a6c34fe66eeedd37d51d0400b72fabc848811fdc1bc", size = 170532, upload-time = "2026-01-12T18:33:39.199Z" },
+]
+
+[[package]]
 name = "pydantic"
 version = "2.12.0"
 source = { registry = "https://pypi.org/simple" }
@@ -633,38 +648,39 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ucapi", specifier = "==0.4.0" },
-    { name = "ucapi-framework", specifier = "==1.2.1" },
+    { name = "ucapi", specifier = "==0.5.1" },
+    { name = "ucapi-framework", specifier = "==1.8.1" },
     { name = "zeroconf", specifier = "==0.147.0" },
     { name = "zwave-js-server-python", specifier = "==0.56.0" },
 ]
 
 [[package]]
 name = "ucapi"
-version = "0.4.0"
+version = "0.5.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "protobuf" },
     { name = "pyee" },
     { name = "websockets" },
     { name = "zeroconf" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b6/bc/cb5f6e00fc5205ed534dbe73f6718dcf94e52f8e22fc23840851f1663564/ucapi-0.4.0.tar.gz", hash = "sha256:594c8dec6cdaf51d6ab425fc327db4601777a083ae77225a6b30b57febc5c7b4", size = 36990, upload-time = "2025-11-24T16:39:34.217Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c6/6f/6c9667a94361d69a5da061d40fde9af4f549b0dfa3e7073964b6d95be532/ucapi-0.5.1.tar.gz", hash = "sha256:7f03da064071a9036fa6e84e283168b800c0547bae21dfba676fe0a5b164b381", size = 54370, upload-time = "2025-12-19T09:50:56.357Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/21/10/8b27dce95b8aaa6aa3f6d4d525ed6c3ab41e994e0bbcbd4f15f69a3d96de/ucapi-0.4.0-py3-none-any.whl", hash = "sha256:b7a1f19783f4bbb19b44e5b5759642e7e437259ea4fc9f9332208d365745e501", size = 32541, upload-time = "2025-11-24T16:39:33.321Z" },
+    { url = "https://files.pythonhosted.org/packages/1b/0a/05eaf430c744abe6168afd54b8ecad9ccb5c412d3b8865feadd2b2ca1e63/ucapi-0.5.1-py3-none-any.whl", hash = "sha256:645cf52d8d636df94b1e593de0e3cb5f61056313b3921fbb0c57ede9d4fb8deb", size = 47453, upload-time = "2025-12-19T09:50:55.43Z" },
 ]
 
 [[package]]
 name = "ucapi-framework"
-version = "1.2.1"
+version = "1.8.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "pyee" },
     { name = "ucapi" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1b/e1/13242f6803c57ed12f1f86f725283402c871e0851c7b270a1c3228dd3913/ucapi_framework-1.2.1.tar.gz", hash = "sha256:d2769b7d0175eff697100d68dc003cec45ac652541c3856d2c7b8eb59c485d77", size = 82922, upload-time = "2025-12-05T01:58:15.591Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a1/60/40f136d29244c6eb770ad2051926fccb87ee1f10e6d9dcfb0743c7230c2d/ucapi_framework-1.8.1.tar.gz", hash = "sha256:e312517540f2cc14e11fff60e124cfd097c66f9f1318a9fdce42aa985d810460", size = 125853, upload-time = "2026-01-29T17:17:54.922Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f7/3e/acf48d39eebdec375c66a649ba36f0c6c03f5fc5f98fe78f0ba35a9a0c4d/ucapi_framework-1.2.1-py3-none-any.whl", hash = "sha256:0a12d925bb0f50d021725bab248d7d74c7052227860557301c95dbd0afe95d1a", size = 47838, upload-time = "2025-12-05T01:58:14.208Z" },
+    { url = "https://files.pythonhosted.org/packages/2b/09/9f5daf41292fc79fbf679e3d7a377f0dc9403bf9406f1453fb424c4f6dbc/ucapi_framework-1.8.1-py3-none-any.whl", hash = "sha256:bfbded363dcd82a6dca8e872f69eff4e3de6436949632e17c6b107615965957d", size = 73275, upload-time = "2026-01-29T17:17:53.266Z" },
 ]
 
 [[package]]

@@ -11,12 +11,12 @@ import ucapi
 from bridge import SmartHub
 from const import ZWaveCoverInfo, ZWaveConfig
 from ucapi import Cover, EntityTypes, cover
-from ucapi_framework import create_entity_id
+from ucapi_framework import create_entity_id, Entity
 
 _LOG = logging.getLogger(__name__)
 
 
-class ZWaveCover(Cover):
+class ZWaveCover(Cover, Entity):
     """Representation of a Z-Wave Cover entity."""
 
     def __init__(
@@ -47,7 +47,7 @@ class ZWaveCover(Cover):
             create_entity_id(
                 entity_type=EntityTypes.COVER,
                 device_id=config.identifier,
-                sub_device_id=cover_info.node_id,
+                sub_device_id=str(cover_info.node_id),
             ),
             self.cover.name,
             features=[
@@ -68,7 +68,11 @@ class ZWaveCover(Cover):
         )
 
     async def cover_cmd_handler(
-        self, entity: Cover, cmd_id: str, params: dict[str, Any] | None
+        self,
+        entity: Cover,
+        cmd_id: str,
+        params: dict[str, Any] | None,
+        _: Any | None = None,
     ) -> ucapi.StatusCodes:
         """
         Cover entity command handler.
@@ -103,6 +107,11 @@ class ZWaveCover(Cover):
                             cover_id=self.cover.node_id,
                             position=position,
                         )
+
+            # Get updated attributes from device and update entity
+            if entity.id in self.device.cover_attributes:
+                self.update(self.device.get_device_attributes(entity.id), force=True)
+
         except Exception as ex:  # pylint: disable=broad-except
             _LOG.error("Error executing command %s: %s", cmd_id, ex)
             return ucapi.StatusCodes.BAD_REQUEST

@@ -63,9 +63,9 @@ class ZWaveSetupFlow(BaseSetupFlow[ZWaveConfig]):
     Handles Z-Wave configuration through manual entry.
     """
 
-    def get_manual_entry_form(self) -> RequestUserInput | SetupError:
+    def get_manual_entry_form(self) -> RequestUserInput:
         """
-        Get the manual entry form for Z-Wave setup.
+        Get the manual entry form for Yamaha AVR setup.
 
         :return: RequestUserInput for manual entry
         """
@@ -73,7 +73,7 @@ class ZWaveSetupFlow(BaseSetupFlow[ZWaveConfig]):
 
     async def query_device(
         self, input_values: dict[str, Any]
-    ) -> ZWaveConfig | RequestUserInput:
+    ) -> ZWaveConfig | RequestUserInput | SetupError:
         """
         Start driver setup.
 
