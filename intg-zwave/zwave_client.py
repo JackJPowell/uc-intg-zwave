@@ -324,10 +324,18 @@ class ZWaveClient:
         node_id = event_data.get("nodeId")
 
         if node_id:
+            command_class = args.get("commandClassName", "")
+            
+            # Filter out command classes that shouldn't be treated as device state updates
+            # Battery levels, meter readings, etc. are metadata, not control values
+            ignored_command_classes = ["Battery", "Meter", "Sensor Multilevel"]
+            if command_class in ignored_command_classes:
+                return
+            
             event_info = {
                 "node_id": node_id,
                 "node_name": self._get_node_name(node_id),
-                "command_class": args.get("commandClassName", ""),
+                "command_class": command_class,
                 "property": args.get("propertyName", ""),
                 "property_key": args.get("propertyKeyName", ""),
                 "new_value": args.get("newValue"),

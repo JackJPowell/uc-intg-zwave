@@ -9,10 +9,15 @@ from typing import Any
 
 from const import ZWaveCoverInfo, ZWaveConfig, ZWaveLightInfo
 from ucapi import EntityTypes
-from ucapi.cover import Attributes as CoverAttr
-from ucapi.light import Attributes as LightAttr
-from ucapi.media_player import Attributes as MediaAttr
-from ucapi_framework import DeviceEvents, ExternalClientDevice, create_entity_id
+from ucapi.cover import States as CoverStates
+from ucapi.light import States as LightStates
+from ucapi_framework import (
+    ExternalClientDevice,
+    create_entity_id,
+    CoverAttributes,
+    LightAttributes,
+    BaseIntegrationDriver,
+)
 from zwave_client import ZWaveClient
 
 _LOG = logging.getLogger(__name__)
@@ -26,6 +31,7 @@ class SmartHub(ExternalClientDevice):
         config: ZWaveConfig,
         loop: AbstractEventLoop | None = None,
         config_manager=None,
+        driver: BaseIntegrationDriver | None = None,
         watchdog_interval: int = 30,
         reconnect_delay: int = 5,
         max_reconnect_attempts: int = 3,
@@ -35,12 +41,16 @@ class SmartHub(ExternalClientDevice):
             device_config=config,
             loop=loop,
             config_manager=config_manager,
+            driver=driver,
             watchdog_interval=watchdog_interval,
             reconnect_delay=reconnect_delay,
             max_reconnect_attempts=max_reconnect_attempts,
         )
         self._lights: list[ZWaveLightInfo] = []
         self._covers: list[ZWaveCoverInfo] = []
+        # Attribute storage for entities
+        self._light_attributes: dict[str, LightAttributes] = {}
+        self._cover_attributes: dict[str, CoverAttributes] = {}
 
     # ─────────────────────────────────────────────────────────────────
     # Properties (required by BaseDeviceInterface)
@@ -83,13 +93,6 @@ class SmartHub(ExternalClientDevice):
         return "ON" if self.is_connected else "OFF"
 
     @property
-    def attributes(self) -> dict[str, Any]:
-        """Return the device attributes."""
-        return {
-            MediaAttr.STATE: self.state,
-        }
-
-    @property
     def lights(self) -> list[ZWaveLightInfo]:
         """Return the list of light entities."""
         return self._lights
@@ -98,6 +101,35 @@ class SmartHub(ExternalClientDevice):
     def covers(self) -> list[ZWaveCoverInfo]:
         """Return the list of cover entities."""
         return self._covers
+
+    @property
+    def light_attributes(self) -> dict[str, LightAttributes]:
+        """Return the light attributes dictionary."""
+        return self._light_attributes
+
+    @property
+    def cover_attributes(self) -> dict[str, CoverAttributes]:
+        """Return the cover attributes dictionary."""
+        return self._cover_attributes
+
+    def get_device_attributes(
+        self, entity_id: str
+    ) -> dict[str, Any] | LightAttributes | CoverAttributes:
+        """
+        Provide entity-specific attributes for the given entity.
+
+        :param entity_id: Entity identifier to get attributes for
+        :return: Dictionary of entity attributes or dataclass instance
+        """
+        # Check if it's a light entity
+        if entity_id in self.light_attributes:
+            return self.light_attributes[entity_id]
+
+        # Check if it's a cover entity
+        if entity_id in self.cover_attributes:
+            return self.cover_attributes[entity_id]
+
+        return {}
 
     # ─────────────────────────────────────────────────────────────────
     # ExternalClientDevice Implementation
@@ -112,6 +144,39 @@ class SmartHub(ExternalClientDevice):
         success = await self._client.connect()
         if not success:
             raise ConnectionError("Failed to connect to Z-Wave controller")
+
+        # Populate lights and covers from Z-Wave network
+        await self.get_lights()
+        await self.get_covers()
+
+        # Initialize attributes for each entity
+        for light_info in self._lights:
+            entity_id = create_entity_id(
+                EntityTypes.LIGHT,
+                self._device_config.identifier,
+                str(light_info.node_id),
+            )
+            brightness = int(light_info.brightness)
+            self._light_attributes[entity_id] = LightAttributes(
+                STATE=LightStates.ON if brightness > 0 else LightStates.OFF,
+                BRIGHTNESS=brightness,
+            )
+
+        for cover_info in self._covers:
+            entity_id = create_entity_id(
+                EntityTypes.COVER,
+                self._device_config.identifier,
+                str(cover_info.node_id),
+            )
+            # Convert Z-Wave position (0-99) to UI position (0-100)
+            ui_position = 100 if cover_info.position >= 99 else int(cover_info.position)
+
+            self._cover_attributes[entity_id] = CoverAttributes(
+                STATE=CoverStates.OPEN
+                if cover_info.position > 50
+                else CoverStates.CLOSED,
+                POSITION=ui_position,
+            )
 
         # Set up event handlers
         self._setup_event_handlers()
@@ -169,14 +234,36 @@ class SmartHub(ExternalClientDevice):
                 return
 
             _LOG.debug(
-                "⚡ BRIDGE [%s]: Value updated - node %d",
+                "⚡ BRIDGE [%s]: Value updated - node %d, event_info: %s",
                 self.log_id,
                 node_id,
+                event_info,
             )
 
             # Check if it's a light or cover and update accordingly
             is_light = any(light.node_id == node_id for light in self._lights)
             is_cover = any(cover.node_id == node_id for cover in self._covers)
+
+            # For covers, handle targetValue and duration properties specially
+            if is_cover:
+                property_name = event_info.get("property", "")
+                if property_name == "duration":
+                    _LOG.debug(
+                        "[%s] Ignoring cover property 'duration' for node %d",
+                        self.log_id,
+                        node_id,
+                    )
+                    return
+                elif property_name == "targetValue":
+                    # targetValue indicates the cover has reached its destination
+                    # Update state to OPEN (or CLOSED if position is 0-1)
+                    _LOG.debug(
+                        "[%s] Cover targetValue reached for node %d, setting to stationary state",
+                        self.log_id,
+                        node_id,
+                    )
+                    self._set_cover_stationary(node_id)
+                    return
 
             if is_light:
                 self._update_light(node_id, event_info)
@@ -219,9 +306,8 @@ class SmartHub(ExternalClientDevice):
     # Light Operations
     # ─────────────────────────────────────────────────────────────────
 
-    def _update_light(self, node_id: int, event_info: dict = None) -> None:
-        """Update light state in cache and emit update event."""
-        update = {}
+    def _update_light(self, node_id: int, event_info: dict | None = None) -> None:
+        """Update light state in cache and store in attributes."""
         try:
             # Find the light using comprehension
             light = next(
@@ -248,7 +334,7 @@ class SmartHub(ExternalClientDevice):
 
                 if isinstance(new_value, dict):
                     _LOG.debug(
-                        "❌ [%s] new_value is a dict for light node_id=%s, expected int/float. Data: %s",
+                        "[%s] Skipping non-brightness value for light node_id=%s (dict): %s",
                         self.log_id,
                         node_id,
                         new_value,
@@ -290,19 +376,30 @@ class SmartHub(ExternalClientDevice):
                     light.brightness,
                 )
 
-            # Prepare update event
-            update[LightAttr.STATE] = "ON" if light.current_state > 0 else "OFF"
-            update[LightAttr.BRIGHTNESS] = light.brightness
-
-            self.events.emit(
-                DeviceEvents.UPDATE,
-                create_entity_id(
-                    EntityTypes.LIGHT,
-                    self._device_config.identifier,
-                    str(light.node_id),
-                ),
-                update,
+            # Store attributes in dataclass
+            entity_id = create_entity_id(
+                EntityTypes.LIGHT,
+                self._device_config.identifier,
+                str(light.node_id),
             )
+
+            # Get old attributes to compare
+            old_attributes = self._light_attributes.get(entity_id)
+
+            # Create new attributes based on current state
+            brightness = 0 if light.current_state == 0 else int(light.brightness)
+            new_attributes = LightAttributes(
+                STATE=LightStates.ON if brightness > 0 else LightStates.OFF,
+                BRIGHTNESS=brightness,
+            )
+            self._light_attributes[entity_id] = new_attributes
+
+            # Emit update event if attributes changed
+            if event_info and old_attributes != new_attributes:
+                if self._driver:
+                    entity = self._driver.get_entity_by_id(entity_id)
+                    if entity:
+                        entity.update(new_attributes)
 
         except Exception:  # pylint: disable=broad-exception-caught
             _LOG.exception("[%s] Light update: protocol error", self.log_id)
@@ -310,7 +407,7 @@ class SmartHub(ExternalClientDevice):
     async def get_lights(self) -> list[Any]:
         """Return the list of light entities from Z-Wave network."""
         if not self._client or not self._client.connected:
-            await self.connect()
+            return []
 
         devices = self._client.get_devices()
         light_list = []
@@ -323,12 +420,17 @@ class SmartHub(ExternalClientDevice):
                 or "dimmer" in device_type
                 or "multilevel" in device_type
             ) and "motor control" not in device_type:
+                # Get current value from Z-Wave (0-100)
+                zwave_value = device_info.get("current_value", 0)
+                # Convert Z-Wave brightness (0-100) to ucapi brightness (0-255)
+                brightness = 0 if zwave_value == 0 else int(zwave_value * 255 / 100)
+
                 light_list.append(
                     ZWaveLightInfo(
                         device_id=str(node_id),
                         node_id=node_id,
-                        current_state=device_info.get("current_value", 0),
-                        brightness=device_info.get("current_value", 0),
+                        current_state=brightness,
+                        brightness=brightness,
                         type=device_type,
                         name=device_info.get("name", f"Node {node_id}"),
                         model=device_info.get("device_type", "Unknown"),
@@ -337,11 +439,11 @@ class SmartHub(ExternalClientDevice):
 
         # Update internal lights list
         self._lights = light_list
+
         return light_list
 
-    async def control_light(self, light_id: str, brightness: int) -> None:
+    async def control_light(self, light_id: int, brightness: int) -> None:
         """Control a light with a specific brightness."""
-        update = {}
         try:
             node_id = int(light_id)
             if brightness == 0:
@@ -351,24 +453,21 @@ class SmartHub(ExternalClientDevice):
             else:
                 await self._client.set_dimmer_level(node_id, brightness)
 
-            update[LightAttr.STATE] = "ON" if brightness > 0 else "OFF"
-            update[LightAttr.BRIGHTNESS] = (
-                100 if brightness == 99 else brightness * 255 / 100
+            entity_id = create_entity_id(
+                EntityTypes.LIGHT,
+                self._device_config.identifier,
+                str(light_id),
             )
 
-            self.events.emit(
-                DeviceEvents.UPDATE,
-                create_entity_id(
-                    EntityTypes.LIGHT,
-                    self._device_config.identifier,
-                    light_id,
-                ),
-                update,
+            self._light_attributes[entity_id] = LightAttributes(
+                STATE=LightStates.ON if brightness > 0 else LightStates.OFF,
+                BRIGHTNESS=100 if brightness == 99 else int(brightness * 255 / 100),
             )
+
         except Exception as err:  # pylint: disable=broad-exception-caught
             _LOG.error("[%s] Error turning on light %s: %s", self.log_id, light_id, err)
 
-    async def toggle_light(self, light_id: str) -> None:
+    async def toggle_light(self, light_id: int) -> None:
         """Toggle a light."""
         try:
             # Get current state from lights list
@@ -387,17 +486,16 @@ class SmartHub(ExternalClientDevice):
                     await self._client.turn_off(node_id)
                 else:
                     await self._client.turn_on(node_id)
-                self.events.emit(
-                    DeviceEvents.UPDATE,
-                    create_entity_id(
-                        EntityTypes.LIGHT,
-                        self._device_config.identifier,
-                        light_id,
-                    ),
-                    {
-                        LightAttr.STATE: "OFF" if is_on else "ON",
-                        LightAttr.BRIGHTNESS: 0 if is_on else 255,
-                    },
+
+                entity_id = create_entity_id(
+                    EntityTypes.LIGHT,
+                    self._device_config.identifier,
+                    str(light_id),
+                )
+
+                self._light_attributes[entity_id] = LightAttributes(
+                    STATE=LightStates.OFF if is_on else LightStates.ON,
+                    BRIGHTNESS=0 if is_on else 255,
                 )
         except Exception as err:  # pylint: disable=broad-exception-caught
             _LOG.error("[%s] Error toggling light %s: %s", self.log_id, light_id, err)
@@ -406,9 +504,44 @@ class SmartHub(ExternalClientDevice):
     # Cover Operations
     # ─────────────────────────────────────────────────────────────────
 
-    def _update_cover(self, node_id: int, event_info: dict = None) -> None:
-        """Update cover state in cache and emit update event."""
-        update = {}
+    def _set_cover_stationary(self, node_id: int) -> None:
+        """Set cover to stationary state (OPEN or CLOSED based on current position)."""
+        try:
+            cover = next(
+                (entity for entity in self._covers if entity.node_id == node_id), None
+            )
+            if not cover:
+                return
+
+            entity_id = create_entity_id(
+                EntityTypes.COVER,
+                self._device_config.identifier,
+                str(node_id),
+            )
+
+            # Get current position
+            ui_position = 100 if cover.position >= 99 else int(cover.position)
+
+            # Set state based on position: CLOSED if 0-1%, otherwise OPEN
+            state = CoverStates.CLOSED if ui_position <= 1 else CoverStates.OPEN
+
+            new_attributes = CoverAttributes(
+                STATE=state,
+                POSITION=ui_position,
+            )
+            self._cover_attributes[entity_id] = new_attributes
+
+            # Send update with force=True
+            if self._driver:
+                entity = self._driver.get_entity_by_id(entity_id)
+                if entity:
+                    entity.update(new_attributes, force=True)
+
+        except Exception:  # pylint: disable=broad-exception-caught
+            _LOG.exception("[%s] Error setting cover stationary state", self.log_id)
+
+    def _update_cover(self, node_id: int, event_info: dict | None = None) -> None:
+        """Update cover state in cache and store in attributes."""
         try:
             # Find the cover using comprehension
             cover = next(
@@ -434,11 +567,21 @@ class SmartHub(ExternalClientDevice):
                     return
 
                 if isinstance(new_value, dict):
-                    _LOG.error(
-                        "❌ [%s] new_value is a dict for cover node_id=%s, expected int/float. Data: %s",
+                    _LOG.debug(
+                        "[%s] Skipping non-position value for cover node_id=%s (dict): %s",
                         self.log_id,
                         node_id,
                         new_value,
+                    )
+                    return
+
+                # Handle string values (like "unknown") from Z-Wave
+                if isinstance(new_value, str):
+                    _LOG.debug(
+                        "[%s] Received string value '%s' for cover node_id=%s, skipping update",
+                        self.log_id,
+                        new_value,
+                        node_id,
                     )
                     return
 
@@ -462,6 +605,21 @@ class SmartHub(ExternalClientDevice):
                     )
                     new_value = max(0, min(100, new_value))
 
+                # Log the position change with additional context
+                old_position = cover.position
+                prev_value = event_info.get("prev_value")
+                _LOG.info(
+                    "📊 [%s] COVER EVENT: node_id=%s | old_cache=%s | new_value=%s | prev_value=%s | DIRECTION: %s",
+                    self.log_id,
+                    node_id,
+                    old_position,
+                    new_value,
+                    prev_value,
+                    "UP"
+                    if new_value > old_position
+                    else ("DOWN" if new_value < old_position else "STABLE"),
+                )
+
                 # Update cover state
                 cover.position = new_value
                 cover.current_state = cover.position
@@ -473,19 +631,57 @@ class SmartHub(ExternalClientDevice):
                     cover.position,
                 )
 
-            # Prepare update event
-            update[CoverAttr.STATE] = "OPEN" if cover.position > 50 else "CLOSED"
-            update[CoverAttr.POSITION] = 100 if cover.position == 99 else cover.position
-
-            self.events.emit(
-                DeviceEvents.UPDATE,
-                create_entity_id(
-                    EntityTypes.COVER,
-                    self._device_config.identifier,
-                    str(cover.node_id),
-                ),
-                update,
+            # Store attributes in dataclass
+            entity_id = create_entity_id(
+                EntityTypes.COVER,
+                self._device_config.identifier,
+                str(cover.node_id),
             )
+
+            # Get old attributes to compare
+            old_attributes = self._cover_attributes.get(entity_id)
+
+            # Convert Z-Wave position (0-99) to UI position (0-100)
+            # Z-Wave often uses 99 as max to avoid "full on" issues
+            ui_position = 100 if cover.position >= 99 else int(cover.position)
+
+            # Determine state based on position and movement
+            # Logic:
+            # - 0-1% = CLOSED
+            # - 2-99% moving up = OPENING
+            # - 2-99% moving down = CLOSING
+            # - 2-99% stationary = OPEN
+            # - 100% = OPEN
+
+            old_ui_position = (
+                old_attributes.POSITION
+                if old_attributes and old_attributes.POSITION is not None
+                else ui_position
+            )
+
+            if ui_position <= 1:
+                state = CoverStates.CLOSED
+            elif old_ui_position < ui_position:
+                # Position increased = opening
+                state = CoverStates.OPENING
+            elif old_ui_position > ui_position:
+                # Position decreased = closing
+                state = CoverStates.CLOSING
+            else:
+                # Position unchanged = stationary, use OPEN for any partial position
+                state = CoverStates.OPEN
+
+            new_attributes = CoverAttributes(
+                STATE=state,
+                POSITION=ui_position,
+            )
+            self._cover_attributes[entity_id] = new_attributes
+
+            # Always update the entity with force=True to ensure state changes are sent
+            if event_info and self._driver:
+                entity = self._driver.get_entity_by_id(entity_id)
+                if entity:
+                    entity.update(new_attributes, force=True)
 
         except Exception:  # pylint: disable=broad-exception-caught
             _LOG.exception("[%s] Cover update: protocol error", self.log_id)
@@ -493,8 +689,9 @@ class SmartHub(ExternalClientDevice):
     async def get_covers(self) -> list[Any]:
         """Return the list of cover entities from Z-Wave network."""
         if not self._client or not self._client.connected:
-            await self.connect()
+            return []
 
+        _LOG.debug("[%s] ⏱️  Fetching devices from Z-Wave client...", self.log_id)
         devices = self._client.get_devices()
         cover_list = []
 
@@ -523,36 +720,48 @@ class SmartHub(ExternalClientDevice):
 
         # Update internal covers list
         self._covers = cover_list
+
         return cover_list
 
-    async def control_cover(self, cover_id: str, position: int) -> None:
+    async def control_cover(self, cover_id: int, position: int) -> None:
         """Control a cover to a specific position (0-100)."""
-        update = {}
         try:
             node_id = int(cover_id)
-            # Position: 0 = closed, 100 = open
-            await self._client.set_dimmer_level(node_id, position)
 
-            # Determine state based on position
-            if position <= 5:
-                state = "CLOSED"
-            elif position >= 95:
-                state = "OPEN"
-            else:
-                state = "OPENING" if position > 50 else "CLOSING"
-
-            update[CoverAttr.STATE] = state
-            update[CoverAttr.POSITION] = position
-
-            self.events.emit(
-                DeviceEvents.UPDATE,
-                create_entity_id(
-                    EntityTypes.COVER,
-                    self._device_config.identifier,
-                    cover_id,
-                ),
-                update,
+            # Get current position to determine direction
+            current_cover = next(
+                (cover for cover in self._covers if cover.node_id == node_id), None
             )
+            current_position = current_cover.position if current_cover else 50
+
+            # Position: 0 = closed, 100 = open
+            # Convert 100% to 99% for Z-Wave (many devices use 99 as max)
+            zwave_position = 99 if position >= 100 else position
+
+            await self._client.set_dimmer_level(node_id, zwave_position)
+
+            # Determine initial state based on direction of movement
+            if position <= 1:
+                state = CoverStates.CLOSED
+            elif position > current_position:
+                state = CoverStates.OPENING
+            elif position < current_position:
+                state = CoverStates.CLOSING
+            else:
+                # No movement
+                state = CoverStates.OPEN
+
+            entity_id = create_entity_id(
+                EntityTypes.COVER,
+                self._device_config.identifier,
+                str(cover_id),
+            )
+
+            self._cover_attributes[entity_id] = CoverAttributes(
+                STATE=state,
+                POSITION=position,
+            )
+
         except Exception as err:  # pylint: disable=broad-exception-caught
             _LOG.error(
                 "[%s] Error controlling cover %s: %s", self.log_id, cover_id, err
