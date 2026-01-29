@@ -535,7 +535,7 @@ class SmartHub(ExternalClientDevice):
             if self._driver:
                 entity = self._driver.get_entity_by_id(entity_id)
                 if entity:
-                    entity.update(new_attributes, force=True)
+                    entity.update(new_attributes, force=False)
 
         except Exception:  # pylint: disable=broad-exception-caught
             _LOG.exception("[%s] Error setting cover stationary state", self.log_id)
@@ -681,7 +681,7 @@ class SmartHub(ExternalClientDevice):
             if event_info and self._driver:
                 entity = self._driver.get_entity_by_id(entity_id)
                 if entity:
-                    entity.update(new_attributes, force=True)
+                    entity.update(new_attributes, force=False)
 
         except Exception:  # pylint: disable=broad-exception-caught
             _LOG.exception("[%s] Cover update: protocol error", self.log_id)

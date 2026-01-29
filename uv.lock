@@ -649,7 +649,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "ucapi", specifier = "==0.5.1" },
-    { name = "ucapi-framework", specifier = "==1.7.2" },
+    { name = "ucapi-framework", specifier = "==1.8.1" },
     { name = "zeroconf", specifier = "==0.147.0" },
     { name = "zwave-js-server-python", specifier = "==0.56.0" },
 ]
@@ -671,16 +671,16 @@ wheels = [
 
 [[package]]
 name = "ucapi-framework"
-version = "1.7.2"
+version = "1.8.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "pyee" },
     { name = "ucapi" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b4/81/bc54173dc802a19b832af9a5be3f22361e83c7203b8f83b9a5ac369bb55b/ucapi_framework-1.7.2.tar.gz", hash = "sha256:0d24707753efa19a803a5047a4993d75866ca332af712101bd8529a00237c057", size = 125909, upload-time = "2026-01-25T19:02:41.244Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a1/60/40f136d29244c6eb770ad2051926fccb87ee1f10e6d9dcfb0743c7230c2d/ucapi_framework-1.8.1.tar.gz", hash = "sha256:e312517540f2cc14e11fff60e124cfd097c66f9f1318a9fdce42aa985d810460", size = 125853, upload-time = "2026-01-29T17:17:54.922Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6f/b8/e16750697d0a479f83bff60b170f4deac64941ae261244faf68fd7633e6d/ucapi_framework-1.7.2-py3-none-any.whl", hash = "sha256:ea1ae297ecd6e9b0d072dd979f9796e6539d385c36fa3147ad0ba767b7836b5a", size = 73358, upload-time = "2026-01-25T19:02:39.845Z" },
+    { url = "https://files.pythonhosted.org/packages/2b/09/9f5daf41292fc79fbf679e3d7a377f0dc9403bf9406f1453fb424c4f6dbc/ucapi_framework-1.8.1-py3-none-any.whl", hash = "sha256:bfbded363dcd82a6dca8e872f69eff4e3de6436949632e17c6b107615965957d", size = 73275, upload-time = "2026-01-29T17:17:53.266Z" },
 ]
 
 [[package]]
